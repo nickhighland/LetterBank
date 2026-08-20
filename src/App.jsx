@@ -545,7 +545,6 @@ export function App() {
         isExporting={isExporting}
         theme={theme}
         setTheme={setTheme}
-        activeTemplate={activeTemplate}
         csvBatchInfo={csvBatchInfo}
         incompleteCount={incompleteFields.length}
       />

@@ -35,22 +35,15 @@ export function Header({
   isExporting,
   theme,
   setTheme,
-  activeTemplate,
   csvBatchInfo,
   incompleteCount = 0,
 }) {
   return (
     <header className="h-15 shrink-0 border-b flex items-center gap-4 px-5 select-none bg-surface-raised border-line">
-      {/* Brand — the lockup is the wordmark, so no separate text label */}
-      <div className="flex items-center gap-3 shrink-0">
-        <BrandLogo className="h-7 w-auto text-ink" />
-        <div
-          className="hidden xl:block text-[11px] truncate max-w-[190px] text-ink-muted border-l border-line pl-3"
-          title={activeTemplate?.title}
-        >
-          {activeTemplate?.title || 'Clinical form letters'}
-        </div>
-      </div>
+      {/* Brand — the lockup alone. The active letter's name already appears in
+          the sidebar selection and the preview, so repeating it here only
+          crowded the bar and truncated. */}
+      <BrandLogo className="h-7 w-auto shrink-0 text-ink" />
 
       <Divider />
 
