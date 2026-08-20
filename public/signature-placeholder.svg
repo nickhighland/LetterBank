@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 170" width="620" height="170"
+     role="img" aria-label="Sample signature: John Hancock">
+  <title>Sample signature</title>
+  <!--
+    Placeholder signature shipped with the app so the signature block has
+    something to show before a clinician uploads or draws their own.
+    Deliberately a well-known historical autograph rather than anyone's real
+    signature, and deliberately vector text rather than a scan.
+  -->
+  <text x="24" y="112"
+        font-family="'Snell Roundhand','Apple Chancery','Segoe Script','Bradley Hand','Brush Script MT',cursive"
+        font-size="96" font-style="italic" fill="#12213a">John Hancock</text>
+  <path d="M28 130 C 170 150, 360 148, 560 122" fill="none" stroke="#12213a"
+        stroke-width="3" stroke-linecap="round" opacity="0.8"/>
+</svg>

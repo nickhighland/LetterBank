@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="./letterbank-mark.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="LetterBank — clinical form letters and document generator"
+    />
+    <title>LetterBank</title>
+    <link rel="manifest" href="./manifest.json" />
+    <!--
+      Fonts are self-hosted in src/assets/fonts and declared in src/styles/fonts.css.
+      No CDN request at launch: the packaged desktop app must render identically
+      with no network, and the paginator measures real metrics either way.
+    -->
+    <script>
+      // Apply the saved theme before first paint so the app never flashes the
+      // wrong palette on launch.
+      try {
+        document.documentElement.setAttribute(
+          'data-theme',
+          localStorage.getItem('letterbank_theme_v2') ||
+            localStorage.getItem('carevault_theme_v2') ||
+            'light'
+        );
+      } catch (e) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./src/main.jsx"></script>
+  </body>
+</html>

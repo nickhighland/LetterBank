@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+dist-electron/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# ---------------------------------------------------------------------------
+# Practice-identifying assets.
+#
+# A letterhead and a signature identify a real clinician and a real practice.
+# They are loaded at runtime through Document setup / Signature block and are
+# stored in the browser's local storage, never in the repository. Keep it that
+# way so the project can be shared or published without carrying anyone's
+# identity with it.
+# ---------------------------------------------------------------------------
+letterhead*.png
+letterhead*.jpg
+letterhead*.jpeg
+*signature*.png
+*signature*.jpg
+*signature*.jpeg
+*signature*.svg
+
+# ...except the generic placeholder the app ships with.
+!public/signature-placeholder.svg
+public/letterhead*
+src/assets/letterhead*

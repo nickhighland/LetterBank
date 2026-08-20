@@ -1,0 +1,17 @@
+{
+  "short_name": "LetterBank",
+  "name": "LetterBank - Clinical Form Letters",
+  "description": "Clinical Form Letter & Document Generator for Mental Health Professionals",
+  "icons": [
+    {
+      "src": "./letterbank-mark.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ],
+  "start_url": "./index.html",
+  "background_color": "#0f172a",
+  "theme_color": "#1e293b",
+  "display": "standalone",
+  "orientation": "any"
+}
