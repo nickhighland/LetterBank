@@ -53,6 +53,21 @@ import { fillableArea } from './constants/page';
 import { useLetterPages } from './hooks/useLetterPages';
 import { useElectronMenu } from './hooks/useElectronMenu';
 
+/**
+ * Which `openModal` values open the Settings modal, and which of them name a
+ * tab within it.
+ *
+ * These must be string literals. They were written as bare identifiers
+ * (`[settings, presets, letterhead, signature]`), so `settings` resolved to no
+ * binding at all and threw `ReferenceError: settings is not defined` while
+ * rendering App — a blank white screen on load. The other three did resolve,
+ * but to the state objects holding presets/letterhead/signature, which could
+ * never equal the string in `openModal`, so the modal would not have opened
+ * even once the crash was gone.
+ */
+const SETTINGS_TABS = ['presets', 'letterhead', 'signature'];
+const SETTINGS_MODALS = ['settings', ...SETTINGS_TABS];
+
 export function App() {
   // ---- Persisted state -----------------------------------------------------
   const [templates, setTemplates] = useState(loadTemplates);
@@ -640,8 +655,8 @@ export function App() {
       />
 
       <SettingsModal
-        isOpen={[settings, presets, letterhead, signature].includes(openModal)}
-        initialTab={[presets, letterhead, signature].includes(openModal) ? openModal : presets}
+        isOpen={SETTINGS_MODALS.includes(openModal)}
+        initialTab={SETTINGS_TABS.includes(openModal) ? openModal : 'presets'}
         onClose={() => setOpenModal(null)}
         letterhead={letterhead}
         onSaveLetterhead={setLetterhead}
