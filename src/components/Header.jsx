@@ -11,6 +11,7 @@ import {
   Printer,
   Sun,
   Moon,
+  Laptop,
   Loader2,
 } from 'lucide-react';
 import { IconButton, SegmentedControl } from './ui';
@@ -23,7 +24,7 @@ const SETTINGS = [
   { id: 'batch', label: 'Merge', Icon: Users, hint: 'CSV mail merge' },
 ];
 
-const Divider = () => <div className="w-px h-7 shrink-0 bg-line" />;
+const Divider = () => <div className="w-px h-7 shrink-0 bg-line no-drag" />;
 
 export function Header({
   activeView,
@@ -38,28 +39,39 @@ export function Header({
   csvBatchInfo,
   incompleteCount = 0,
 }) {
+  const isMacDesktop =
+    typeof window !== 'undefined' &&
+    window.electronAPI?.isElectron &&
+    window.electronAPI?.platform === 'darwin';
+
   return (
-    <header className="h-15 shrink-0 border-b flex items-center gap-4 px-5 select-none bg-surface-raised border-line">
-      {/* Brand — the lockup alone. The active letter's name already appears in
-          the sidebar selection and the preview, so repeating it here only
-          crowded the bar and truncated. */}
-      <BrandLogo className="h-7 w-auto shrink-0 text-ink" />
+    <header
+      className={`h-15 shrink-0 border-b flex items-center gap-4 px-5 select-none bg-surface-raised border-line app-drag-region ${
+        isMacDesktop ? 'pl-20' : ''
+      }`}
+    >
+      {/* Brand Logo - auto-switches between Day and Night assets */}
+      <div className="no-drag flex items-center">
+        <BrandLogo className="h-7 w-auto shrink-0 text-ink" />
+      </div>
 
       <Divider />
 
-      <SegmentedControl
-        value={activeView}
-        onChange={setActiveView}
-        options={[
-          { value: 'fill', label: 'Quick Fill', Icon: FileText },
-          { value: 'editor', label: 'Editor', Icon: Edit3 },
-        ]}
-      />
+      <div className="no-drag">
+        <SegmentedControl
+          value={activeView}
+          onChange={setActiveView}
+          options={[
+            { value: 'fill', label: 'Quick Fill', Icon: FileText },
+            { value: 'editor', label: 'Editor', Icon: Edit3 },
+          ]}
+        />
+      </div>
 
       {incompleteCount > 0 && (
         <div
           className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px]
-                     font-medium bg-warning-soft text-warning"
+                     font-medium bg-warning-soft text-warning no-drag"
           title="Copy, print and export will ask you to confirm"
         >
           <AlertTriangle className="w-3.5 h-3.5" />
@@ -68,16 +80,17 @@ export function Header({
       )}
 
       {csvBatchInfo && (
-        <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-accent-soft text-accent-ink">
+        <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-accent-soft text-accent-ink no-drag">
           <Users className="w-3.5 h-3.5" />
           Record {csvBatchInfo.currentIndex + 1} of {csvBatchInfo.total}
         </div>
       )}
 
-      <div className="flex-1" />
+      {/* Draggable spacer across the middle of the window */}
+      <div className="flex-1 min-w-4 h-full" />
 
       {/* Settings */}
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex items-center gap-1 shrink-0 no-drag">
         {SETTINGS.map(({ id, label, Icon, hint }) => (
           <IconButton key={id} onClick={() => onOpenModal(id)} label={hint}>
             <Icon className="w-4 h-4" />
@@ -89,7 +102,7 @@ export function Header({
       <Divider />
 
       {/* Actions */}
-      <div className="flex items-center gap-1.5 shrink-0">
+      <div className="flex items-center gap-1.5 shrink-0 no-drag">
         <IconButton onClick={onCopyText} label="Copy letter body to clipboard">
           <Copy className="w-4 h-4" />
           <span className="hidden lg:inline">Copy</span>
@@ -120,15 +133,19 @@ export function Header({
 
       <Divider />
 
-      <SegmentedControl
-        value={theme}
-        onChange={setTheme}
-        compact
-        options={[
-          { value: 'light', label: 'Day', Icon: Sun },
-          { value: 'dark', label: 'Night', Icon: Moon },
-        ]}
-      />
+      {/* Day / Night / System Mode Segmented Control */}
+      <div className="no-drag">
+        <SegmentedControl
+          value={theme}
+          onChange={setTheme}
+          compact
+          options={[
+            { value: 'light', label: 'Day', Icon: Sun },
+            { value: 'dark', label: 'Night', Icon: Moon },
+            { value: 'system', label: 'Auto', Icon: Laptop },
+          ]}
+        />
+      </div>
     </header>
   );
 }

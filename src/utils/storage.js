@@ -244,7 +244,7 @@ export function saveLetterhead(lh) {
 
 export function loadTheme() {
   try {
-    return localStorage.getItem(STORAGE_KEYS.THEME) || 'light'; // Default to Day/Light Mode!
+    return localStorage.getItem(STORAGE_KEYS.THEME) || 'system'; // Default to Day/Light Mode!
   } catch (e) {
     return 'light';
   }

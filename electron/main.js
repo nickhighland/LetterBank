@@ -15,6 +15,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 720,
     titleBarStyle: 'hiddenInset',
+    trafficLightPosition: { x: 18, y: 18 },
     backgroundColor: '#0f172a',
     title: 'LetterBank',
     webPreferences: {

@@ -462,3 +462,24 @@ body {
     print-color-adjust: exact !important;
   }
 }
+
+/* --------------------------------------------------------------------------
+   ELECTRON WINDOW DRAGGING & TITLEBAR
+   -------------------------------------------------------------------------- */
+.app-drag-region {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.no-drag,
+button,
+input,
+textarea,
+select,
+a,
+label,
+.cursor-pointer,
+[role="button"],
+[role="tab"] {
+  -webkit-app-region: no-drag;
+}

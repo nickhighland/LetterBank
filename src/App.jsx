@@ -108,8 +108,31 @@ export function App() {
 
   // ---- Theme ---------------------------------------------------------------
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
     saveTheme(theme);
+
+    const applyTheme = () => {
+      let resolved = theme;
+      if (theme === "system") {
+        resolved = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+      }
+      document.documentElement.setAttribute("data-theme", resolved);
+      if (resolved === "dark") {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+    };
+
+    applyTheme();
+
+    if (theme === "system" && window.matchMedia) {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      const listener = () => applyTheme();
+      mq.addEventListener("change", listener);
+      return () => mq.removeEventListener("change", listener);
+    }
   }, [theme]);
 
   // ---- Persistence ---------------------------------------------------------
