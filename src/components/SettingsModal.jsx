@@ -20,7 +20,7 @@ import {
   DEFAULT_CLINICIAN,
 } from '../utils/storage';
 import { DATE_FORMATS } from '../utils/variableParser';
-import { fillableArea, pxToInches } from '../constants/page';
+import { fillableArea, pxToInches, inchesToPx } from '../constants/page';
 import { Modal, Button, Field, TextInput, SegmentedControl } from './ui';
 import { resolveSignatureTokens } from './LetterDocument';
 
@@ -537,7 +537,7 @@ export function SettingsModal({
                             value={pxToInches(currentLh[key])}
                             onChange={(e) => {
                               const val = parseFloat(e.target.value);
-                              if (!isNaN(val)) setLh({ [key]: Math.round(val * 96) });
+                              if (!isNaN(val)) setLh({ [key]: inchesToPx(val) });
                             }}
                             className="font-mono text-center"
                           />

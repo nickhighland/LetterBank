@@ -3,7 +3,7 @@
  *
  * US Letter is 8.5in x 11in => 816 x 1056. These numbers were previously
  * written out by hand in five files (App, LetterDocument, LetterPreview,
- * LetterheadModal, useLetterPages), so a change had to be made in five places
+ * SettingsModal, useLetterPages), so a change had to be made in five places
  * and could silently disagree between the preview and the export.
  */
 export const PAGE_WIDTH = 816;
