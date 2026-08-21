@@ -40,3 +40,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Native print dialog.
   printLetter: () => ipcRenderer.invoke('print:letter'),
 });
+
+window.addEventListener("DOMContentLoaded", () => {
+  if (process.platform === "darwin") {
+    document.documentElement.classList.add("is-mac-electron");
+  }
+});

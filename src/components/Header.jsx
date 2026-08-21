@@ -3,8 +3,7 @@ import {
   FileText,
   Edit3,
   AlertTriangle,
-  Image as ImageIcon,
-  PenTool,
+  Settings as SettingsIcon,
   Users,
   Copy,
   Download,
@@ -16,13 +15,6 @@ import {
 } from 'lucide-react';
 import { IconButton, SegmentedControl } from './ui';
 import { BrandLogo } from './BrandLogo';
-
-const SETTINGS = [
-  { id: 'presets', label: 'Presets', Icon: FileText, hint: 'Practice & clinician presets' },
-  { id: 'letterhead', label: 'Letterhead', Icon: ImageIcon, hint: 'Letterhead, margins & type' },
-  { id: 'signature', label: 'Signature', Icon: PenTool, hint: 'Signature block & credentials' },
-  { id: 'batch', label: 'Merge', Icon: Users, hint: 'CSV mail merge' },
-];
 
 const Divider = () => <div className="w-px h-7 shrink-0 bg-line no-drag" />;
 
@@ -39,18 +31,20 @@ export function Header({
   csvBatchInfo,
   incompleteCount = 0,
 }) {
+  // On macOS Electron desktop, traffic lights sit at top-left (approx 16px - 72px)
+  // We apply generous padding so the LetterBank logo is NEVER overlapped.
   const isMacDesktop =
     typeof window !== 'undefined' &&
-    window.electronAPI?.isElectron &&
-    window.electronAPI?.platform === 'darwin';
+    (window.electronAPI?.platform === 'darwin' ||
+     (window.electronAPI?.isElectron && /Mac|iPhone|iPod|iPad/.test(navigator.platform)));
 
   return (
     <header
       className={`h-15 shrink-0 border-b flex items-center gap-4 px-5 select-none bg-surface-raised border-line app-drag-region ${
-        isMacDesktop ? 'pl-20' : ''
+        isMacDesktop ? '!pl-[92px]' : ''
       }`}
     >
-      {/* Brand Logo - auto-switches between Day and Night assets */}
+      {/* Brand Logo - clean spacing from macOS window controls */}
       <div className="no-drag flex items-center">
         <BrandLogo className="h-7 w-auto shrink-0 text-ink" />
       </div>
@@ -89,19 +83,22 @@ export function Header({
       {/* Draggable spacer across the middle of the window */}
       <div className="flex-1 min-w-4 h-full" />
 
-      {/* Settings */}
+      {/* Tools & Settings */}
       <div className="flex items-center gap-1 shrink-0 no-drag">
-        {SETTINGS.map(({ id, label, Icon, hint }) => (
-          <IconButton key={id} onClick={() => onOpenModal(id)} label={hint}>
-            <Icon className="w-4 h-4" />
-            <span className="hidden xl:inline">{label}</span>
-          </IconButton>
-        ))}
+        <IconButton onClick={() => onOpenModal('batch')} label="CSV mail merge">
+          <Users className="w-4 h-4" />
+          <span className="hidden xl:inline">Merge</span>
+        </IconButton>
+
+        <IconButton onClick={() => onOpenModal('settings')} label="Practice presets, letterhead & signature">
+          <SettingsIcon className="w-4 h-4" />
+          <span className="hidden xl:inline">Settings</span>
+        </IconButton>
       </div>
 
       <Divider />
 
-      {/* Actions */}
+      {/* Primary Actions */}
       <div className="flex items-center gap-1.5 shrink-0 no-drag">
         <IconButton onClick={onCopyText} label="Copy letter body to clipboard">
           <Copy className="w-4 h-4" />
@@ -133,7 +130,7 @@ export function Header({
 
       <Divider />
 
-      {/* Day / Night / System Mode Segmented Control */}
+      {/* Day / Night / Auto Segmented Control */}
       <div className="no-drag">
         <SegmentedControl
           value={theme}

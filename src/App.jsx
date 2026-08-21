@@ -7,11 +7,9 @@ import { QuickFillPanel } from './components/QuickFillPanel';
 import { DocumentEditor } from './components/DocumentEditor';
 import { LetterPreview } from './components/LetterPreview';
 import { PrintPortal } from './components/PrintPortal';
-import { SignatureModal } from './components/SignatureModal';
-import { LetterheadModal } from './components/LetterheadModal';
+import { SettingsModal } from './components/SettingsModal';
 import { BatchMergeModal } from './components/BatchMergeModal';
 import { TemplateModal } from './components/TemplateModal';
-import { PresetsModal } from './components/PresetsModal';
 import { Toast } from './components/Toast';
 import { IncompleteFieldsModal } from './components/IncompleteFieldsModal';
 
@@ -641,29 +639,19 @@ export function App() {
         letterDate={letterDate}
       />
 
-      <PresetsModal
-        isOpen={openModal === 'presets'}
+      <SettingsModal
+        isOpen={[settings, presets, letterhead, signature].includes(openModal)}
+        initialTab={[presets, letterhead, signature].includes(openModal) ? openModal : presets}
         onClose={() => setOpenModal(null)}
+        letterhead={letterhead}
+        onSaveLetterhead={setLetterhead}
         presets={presets}
         onSavePresets={setPresets}
         onApplyPresetsToCurrentLetter={handleApplyPresets}
-      />
-
-      <SignatureModal
-        isOpen={openModal === 'signature'}
-        onClose={() => setOpenModal(null)}
         signature={signature}
         onSaveSignature={setSignature}
         clinician={clinician}
         onSaveClinician={setClinician}
-        presets={presets}
-      />
-
-      <LetterheadModal
-        isOpen={openModal === 'letterhead'}
-        onClose={() => setOpenModal(null)}
-        letterhead={letterhead}
-        onSaveLetterhead={setLetterhead}
       />
 
       <BatchMergeModal
