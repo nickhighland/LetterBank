@@ -701,10 +701,7 @@ export function App() {
             profiles={presetProfiles.profiles}
             activeId={presetProfiles.activeId}
             onSelect={handleSelectProfile}
-            onAdd={() => {
-              const name = window.prompt('Name this practice (e.g. Headway, Alma)', '');
-              if (name !== null) handleAddProfile(name);
-            }}
+            onAdd={handleAddProfile}
             onManage={() => setOpenModal('presets')}
           />
         }

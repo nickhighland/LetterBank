@@ -11,7 +11,13 @@ import { Building2, Check, ChevronDown, Plus, Settings2 } from 'lucide-react';
  */
 export function PracticeSwitcher({ profiles, activeId, onSelect, onAdd, onManage }) {
   const [open, setOpen] = useState(false);
+  // Naming happens inline rather than via window.prompt(), which throws
+  // "prompt() is not supported." in Electron — the button appeared dead in the
+  // desktop app while the same action worked from Settings.
+  const [adding, setAdding] = useState(false);
+  const [draftName, setDraftName] = useState('');
   const boxRef = useRef(null);
+  const draftRef = useRef(null);
 
   const active = profiles.find((p) => p.id === activeId) || profiles[0];
 
@@ -28,6 +34,27 @@ export function PracticeSwitcher({ profiles, activeId, onSelect, onAdd, onManage
       window.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  // Reset the draft whenever the menu closes, so it never reopens mid-entry.
+  useEffect(() => {
+    if (!open) {
+      setAdding(false);
+      setDraftName('');
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (adding) draftRef.current?.focus();
+  }, [adding]);
+
+  const commitName = () => {
+    const name = draftName.trim();
+    if (!name) return;
+    onAdd?.(name);
+    setAdding(false);
+    setDraftName('');
+    setOpen(false);
+  };
 
   return (
     <div ref={boxRef} className="relative no-drag shrink-0">
@@ -91,18 +118,51 @@ export function PracticeSwitcher({ profiles, activeId, onSelect, onAdd, onManage
           </ul>
 
           <div className="border-t border-line">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onAdd?.();
-              }}
-              className="w-full flex items-center gap-2 px-3 py-2 cursor-pointer
-                         transition-colors text-ink-secondary hover:bg-surface-hover"
-            >
-              <Plus className="w-3.5 h-3.5 shrink-0" />
-              <span className="text-[12px] font-medium">Add practice</span>
-            </button>
+            {adding ? (
+              <div className="flex items-center gap-1.5 px-2 py-2">
+                <input
+                  ref={draftRef}
+                  value={draftName}
+                  onChange={(e) => setDraftName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      commitName();
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setAdding(false);
+                      setDraftName('');
+                    }
+                  }}
+                  placeholder="e.g. Headway"
+                  aria-label="New practice name"
+                  className="flex-1 min-w-0 px-2.5 py-1.5 text-[13px] rounded-lg border outline-none
+                             bg-surface-raised border-line text-ink placeholder:text-ink-faint
+                             focus:border-accent"
+                />
+                <button
+                  type="button"
+                  onClick={commitName}
+                  disabled={!draftName.trim()}
+                  className="h-8 px-2.5 text-[12px] font-semibold rounded-lg shrink-0 cursor-pointer
+                             bg-accent text-white hover:bg-accent-hover transition-colors
+                             disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Add
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                className="w-full flex items-center gap-2 px-3 py-2 cursor-pointer
+                           transition-colors text-ink-secondary hover:bg-surface-hover"
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-[12px] font-medium">Add practice</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
