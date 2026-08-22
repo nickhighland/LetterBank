@@ -11,6 +11,8 @@ import { SettingsModal } from './components/SettingsModal';
 import { BatchMergeModal } from './components/BatchMergeModal';
 import { TemplateModal } from './components/TemplateModal';
 import { Toast } from './components/Toast';
+import { PracticeSwitcher } from './components/PracticeSwitcher';
+import { UpdateBanner } from './components/UpdateBanner';
 import { IncompleteFieldsModal } from './components/IncompleteFieldsModal';
 
 import {
@@ -19,6 +21,10 @@ import {
   resetTemplates,
   loadPresets,
   savePresets,
+  loadPresetProfiles,
+  savePresetProfiles,
+  makeProfile,
+  DEFAULT_PRESETS,
   loadClinician,
   saveClinician,
   loadSignature,
@@ -52,6 +58,7 @@ import { paginateDocument } from './utils/documentPaginator';
 import { fillableArea } from './constants/page';
 import { useLetterPages } from './hooks/useLetterPages';
 import { useElectronMenu } from './hooks/useElectronMenu';
+import { useUpdater } from './hooks/useUpdater';
 
 /**
  * Which `openModal` values open the Settings modal, and which of them name a
@@ -76,7 +83,9 @@ export function App() {
     const all = loadTemplates();
     return all.some((t) => t.id === stored) ? stored : all[0]?.id || '';
   });
-  const [presets, setPresets] = useState(loadPresets);
+  // Practice profiles. `presets` stays a flat key->value object for everything
+  // downstream; only its source changes — it is now the active profile's values.
+  const [presetProfiles, setPresetProfiles] = useState(loadPresetProfiles);
   const [seedPurgeCount] = useState(() => purgeSeededDefaults(loadTemplates(), loadPresets()));
   const [valuesCache, setValuesCache] = useState(loadValuesCache);
   const [clinician, setClinician] = useState(loadClinician);
@@ -150,7 +159,7 @@ export function App() {
 
   // ---- Persistence ---------------------------------------------------------
   useEffect(() => saveTemplates(templates), [templates]);
-  useEffect(() => savePresets(presets), [presets]);
+  useEffect(() => savePresetProfiles(presetProfiles), [presetProfiles]);
   useEffect(() => saveClinician(clinician), [clinician]);
   useEffect(() => saveSignature(signature), [signature]);
   useEffect(() => saveLetterhead(letterhead), [letterhead]);
@@ -159,6 +168,25 @@ export function App() {
   useEffect(() => saveLetterDates(letterDates), [letterDates]);
 
   // ---- Derived -------------------------------------------------------------
+  const activeProfile =
+    presetProfiles.profiles.find((p) => p.id === presetProfiles.activeId) ||
+    presetProfiles.profiles[0];
+
+  /** The active practice's values. Same shape the app has always consumed. */
+  const presets = activeProfile?.values || DEFAULT_PRESETS;
+
+  /** Writes land on the active profile, so Settings edits stay per-practice. */
+  const setPresets = useCallback((next) => {
+    setPresetProfiles((prev) => ({
+      ...prev,
+      profiles: prev.profiles.map((p) =>
+        p.id === prev.activeId
+          ? { ...p, values: typeof next === 'function' ? next(p.values) : next }
+          : p
+      ),
+    }));
+  }, []);
+
   const activeTemplate =
     templates.find((t) => t.id === activeTemplateId) || templates[0];
 
@@ -288,6 +316,89 @@ export function App() {
       );
     },
     [presets, valuesCache, activeTemplate?.id, activeVariables, notify]
+  );
+
+  // ---- Practice profiles ---------------------------------------------------
+  /**
+   * Switching practice re-applies that practice's values to the open letter,
+   * which is the point of the switcher — otherwise the header would say
+   * "Alma" while the letter still carried the Headway details.
+   */
+  const handleSelectProfile = useCallback(
+    (id) => {
+      const next = presetProfiles.profiles.find((p) => p.id === id);
+      if (!next) return;
+
+      setPresetProfiles((prev) => ({ ...prev, activeId: id }));
+
+      const updated = { ...(valuesCache[activeTemplate?.id] || {}) };
+      activeVariables.forEach((v) => {
+        if (next.values[v] !== undefined) updated[v] = next.values[v];
+      });
+      setValuesCache((prev) => ({ ...prev, [activeTemplate?.id]: updated }));
+
+      notify(`Switched to ${next.name}`, 'info');
+    },
+    [presetProfiles.profiles, valuesCache, activeTemplate?.id, activeVariables, notify]
+  );
+
+  const handleAddProfile = useCallback(
+    (name) => {
+      const created = makeProfile(name?.trim() || 'New practice');
+      setPresetProfiles((prev) => ({
+        activeId: created.id,
+        profiles: [...prev.profiles, created],
+      }));
+      notify(`Added ${created.name}`);
+      return created.id;
+    },
+    [notify]
+  );
+
+  /** Copying is how most second practices start: same clinician, new platform. */
+  const handleDuplicateProfile = useCallback(
+    (id) => {
+      const src = presetProfiles.profiles.find((p) => p.id === id);
+      if (!src) return;
+      const copy = makeProfile(`${src.name} (copy)`, src.values);
+      setPresetProfiles((prev) => ({
+        activeId: copy.id,
+        profiles: [...prev.profiles, copy],
+      }));
+      notify(`Duplicated ${src.name}`);
+    },
+    [presetProfiles.profiles, notify]
+  );
+
+  const handleRenameProfile = useCallback((id, name) => {
+    setPresetProfiles((prev) => ({
+      ...prev,
+      profiles: prev.profiles.map((p) =>
+        p.id === id ? { ...p, name: name?.trim() || p.name } : p
+      ),
+    }));
+  }, []);
+
+  const handleDeleteProfile = useCallback(
+    (id) => {
+      const target = presetProfiles.profiles.find((p) => p.id === id);
+      if (!target) return;
+      if (presetProfiles.profiles.length <= 1) {
+        notify('Keep at least one practice', 'error');
+        return;
+      }
+      if (!window.confirm(`Delete the practice "${target.name}"? This cannot be undone.`)) return;
+
+      setPresetProfiles((prev) => {
+        const profiles = prev.profiles.filter((p) => p.id !== id);
+        return {
+          profiles,
+          activeId: prev.activeId === id ? profiles[0].id : prev.activeId,
+        };
+      });
+      notify(`Deleted ${target.name}`, 'info');
+    },
+    [presetProfiles.profiles, notify]
   );
 
   const handleChangeValue = useCallback(
@@ -553,6 +664,8 @@ export function App() {
     }
   };
 
+  const { update, openDownload, dismiss: dismissUpdate } = useUpdater(notify);
+
   // ---- Desktop menu accelerators ------------------------------------------
   useElectronMenu({
     onNewLetter: () => setOpenModal('template'),
@@ -583,7 +696,21 @@ export function App() {
         setTheme={setTheme}
         csvBatchInfo={csvBatchInfo}
         incompleteCount={incompleteFields.length}
+        practiceSwitcher={
+          <PracticeSwitcher
+            profiles={presetProfiles.profiles}
+            activeId={presetProfiles.activeId}
+            onSelect={handleSelectProfile}
+            onAdd={() => {
+              const name = window.prompt('Name this practice (e.g. Headway, Alma)', '');
+              if (name !== null) handleAddProfile(name);
+            }}
+            onManage={() => setOpenModal('presets')}
+          />
+        }
       />
+
+      <UpdateBanner update={update} onDownload={openDownload} onDismiss={dismissUpdate} />
 
       <div className="flex-1 flex min-h-0">
         <Sidebar
@@ -662,6 +789,13 @@ export function App() {
         onSaveLetterhead={setLetterhead}
         presets={presets}
         onSavePresets={setPresets}
+        profiles={presetProfiles.profiles}
+        activeProfileId={presetProfiles.activeId}
+        onSelectProfile={handleSelectProfile}
+        onAddProfile={handleAddProfile}
+        onDuplicateProfile={handleDuplicateProfile}
+        onRenameProfile={handleRenameProfile}
+        onDeleteProfile={handleDeleteProfile}
         onApplyPresetsToCurrentLetter={handleApplyPresets}
         signature={signature}
         onSaveSignature={setSignature}

@@ -1,7 +1,7 @@
 {
   "name": "letterbank",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "type": "module",
   "main": "electron/main.js",
   "author": {
@@ -42,9 +42,17 @@
         }
       ],
       "icon": "electron/icon.png"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "nickhighland",
+        "repo": "LetterBank"
+      }
+    ]
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",
     "lucide-react": "^1.16.0",

@@ -30,6 +30,7 @@ export function Header({
   setTheme,
   csvBatchInfo,
   incompleteCount = 0,
+  practiceSwitcher = null,
 }) {
   // On macOS Electron desktop, traffic lights sit at top-left (approx 16px - 72px)
   // We apply generous padding so the LetterBank logo is NEVER overlapped.
@@ -71,6 +72,13 @@ export function Header({
           <AlertTriangle className="w-3.5 h-3.5" />
           {incompleteCount} empty
         </div>
+      )}
+
+      {practiceSwitcher && (
+        <>
+          <Divider />
+          {practiceSwitcher}
+        </>
       )}
 
       {csvBatchInfo && (

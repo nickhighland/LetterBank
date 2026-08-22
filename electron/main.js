@@ -1,5 +1,10 @@
 import { app, BrowserWindow, Menu, shell, ipcMain, dialog } from 'electron';
 import fs from 'fs/promises';
+import { createRequire } from 'module';
+
+// main.js is ESM; the updater is CommonJS because electron-updater is.
+const require = createRequire(import.meta.url);
+const { registerUpdater } = require('./updater.cjs');
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -7,6 +12,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const isDev = process.env.ELECTRON_DEV === 'true' || !app.isPackaged;
+
+let mainWindow = null;
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -19,7 +26,7 @@ function createWindow() {
     backgroundColor: '#0f172a',
     title: 'LetterBank',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, 'preload.cjs'),
       nodeIntegration: false,
       contextIsolation: true,
       spellcheck: true
@@ -38,6 +45,11 @@ function createWindow() {
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
+  });
+
+  mainWindow = win;
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
   });
 
   createMenu();
@@ -78,6 +90,13 @@ function createMenu() {
             if (browserWindow) browserWindow.webContents.send('app:export-pdf');
           }
         },
+        {
+          label: 'Check for Updates…',
+          click: (menuItem, browserWindow) => {
+            if (browserWindow) browserWindow.webContents.send('app:check-updates');
+          }
+        },
+        { type: 'separator' },
         {
           label: 'Print Letter',
           accelerator: 'CmdOrCtrl+P',
@@ -207,6 +226,7 @@ function registerIpcHandlers() {
 
 app.whenReady().then(() => {
   registerIpcHandlers();
+  registerUpdater(() => mainWindow);
   createWindow();
 
   app.on('activate', () => {

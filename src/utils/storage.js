@@ -3,6 +3,7 @@ import { DEFAULT_TEMPLATES } from '../data/defaultTemplates';
 const STORAGE_KEYS = {
   TEMPLATES: 'letterbank_templates_v2',
   PRESETS: 'letterbank_presets_v2',
+  PRESET_PROFILES: 'letterbank_preset_profiles_v1',
   CLINICIAN: 'letterbank_clinician_v2',
   SIGNATURE: 'letterbank_signature_v2',
   LETTERHEAD: 'letterbank_letterhead_v2',
@@ -127,6 +128,70 @@ export const DEFAULT_LETTERHEAD = {
   pageNumberPosition: 'bottom-right', // 'bottom-left' | 'bottom-center' | 'bottom-right'
   pageNumbersOnSinglePage: false,
 };
+
+/**
+ * Practice profiles.
+ *
+ * A clinician who takes clients through more than one platform — Headway,
+ * Alma, a private practice — needs a different practice name, contact details
+ * and telehealth link per platform, and needs to switch between them without
+ * retyping. Each profile is a named set of the same preset keys; exactly one is
+ * active, and the active profile's values are what fill a letter.
+ */
+export function makeProfileId() {
+  return `practice-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+export function makeProfile(name, values = {}) {
+  return { id: makeProfileId(), name, values: { ...DEFAULT_PRESETS, ...values } };
+}
+
+function normaliseProfiles(raw) {
+  const profiles = (raw?.profiles || [])
+    .filter((p) => p && typeof p === 'object')
+    .map((p) => ({
+      id: p.id || makeProfileId(),
+      name: String(p.name || 'Untitled practice'),
+      values: { ...DEFAULT_PRESETS, ...(p.values || {}) },
+    }));
+
+  if (profiles.length === 0) profiles.push(makeProfile('My practice'));
+
+  const activeId = profiles.some((p) => p.id === raw?.activeId)
+    ? raw.activeId
+    : profiles[0].id;
+
+  return { activeId, profiles };
+}
+
+/**
+ * Load profiles, folding a pre-profiles single preset set into the first
+ * profile so an existing install keeps its practice details.
+ */
+export function loadPresetProfiles() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.PRESET_PROFILES);
+    if (raw) return normaliseProfiles(JSON.parse(raw));
+
+    const legacy = localStorage.getItem(STORAGE_KEYS.PRESETS);
+    if (legacy) {
+      const values = { ...DEFAULT_PRESETS, ...JSON.parse(legacy) };
+      const name = values.practice_name?.trim() || 'My practice';
+      return normaliseProfiles({ profiles: [makeProfile(name, values)] });
+    }
+  } catch (e) {
+    console.error('Error loading practice profiles', e);
+  }
+  return normaliseProfiles(null);
+}
+
+export function savePresetProfiles(state) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PRESET_PROFILES, JSON.stringify(state));
+  } catch (e) {
+    console.error('Error saving practice profiles', e);
+  }
+}
 
 export function loadPresets() {
   try {

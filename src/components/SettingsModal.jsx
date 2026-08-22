@@ -8,6 +8,7 @@ import {
   RotateCcw,
   Upload,
   Plus,
+  Copy,
   Trash2,
   AlignLeft,
   AlignCenter,
@@ -200,6 +201,13 @@ function SignaturePad({ onCommit }) {
 
 export function SettingsModal({
   isOpen,
+  profiles = [],
+  activeProfileId,
+  onSelectProfile,
+  onAddProfile,
+  onDuplicateProfile,
+  onRenameProfile,
+  onDeleteProfile,
   initialTab = 'presets',
   onClose,
   letterhead,
@@ -354,6 +362,84 @@ export function SettingsModal({
               <h3 className="text-[13px] font-semibold text-ink">Practice & Clinician Profile</h3>
               <p className="text-[11px] text-ink-muted">
                 These values automatically fill matching fields across all templates.
+              </p>
+            </div>
+
+            {/* Practice profiles. Kept above the fields so it is clear the
+                fields below belong to the practice selected here. */}
+            <div className="rounded-xl border p-4 space-y-3 border-line bg-surface-sunken">
+              <div className="flex items-baseline justify-between gap-2">
+                <h4 className="text-[12px] font-semibold text-ink-secondary">Practices</h4>
+                <span className="text-[11px] text-ink-faint">
+                  One per platform — Headway, Alma, private practice
+                </span>
+              </div>
+
+              <ul className="space-y-1.5">
+                {profiles.map((p) => {
+                  const isActive = p.id === activeProfileId;
+                  return (
+                    <li
+                      key={p.id}
+                      className={`flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-colors ${
+                        isActive
+                          ? 'border-accent bg-surface-active'
+                          : 'border-line bg-surface-raised'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => !isActive && onSelectProfile?.(p.id)}
+                        title={isActive ? 'Active practice' : `Switch to ${p.name}`}
+                        className={`grid place-items-center w-5 h-5 rounded-full border shrink-0 cursor-pointer ${
+                          isActive ? 'border-accent' : 'border-line-strong'
+                        }`}
+                      >
+                        {isActive && <span className="w-2.5 h-2.5 rounded-full bg-accent" />}
+                      </button>
+
+                      <TextInput
+                        value={p.name}
+                        onChange={(e) => onRenameProfile?.(p.id, e.target.value)}
+                        aria-label="Practice name"
+                        className="!py-1.5 !text-[13px]"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => onDuplicateProfile?.(p.id)}
+                        title="Duplicate this practice"
+                        aria-label={`Duplicate ${p.name}`}
+                        className="grid place-items-center w-7 h-7 rounded-md shrink-0 cursor-pointer
+                                   text-ink-faint hover:text-ink hover:bg-surface-hover transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteProfile?.(p.id)}
+                        disabled={profiles.length <= 1}
+                        title={profiles.length <= 1 ? 'Keep at least one practice' : 'Delete this practice'}
+                        aria-label={`Delete ${p.name}`}
+                        className="grid place-items-center w-7 h-7 rounded-md shrink-0 cursor-pointer
+                                   text-danger hover:bg-danger-soft transition-colors
+                                   disabled:opacity-30 disabled:cursor-not-allowed"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              <Button onClick={() => onAddProfile?.('New practice')}>
+                <Plus className="w-3.5 h-3.5" />
+                Add practice
+              </Button>
+
+              <p className="text-[11px] text-ink-faint">
+                Switching practice re-fills the open letter with that practice's details.
+                Unsaved edits on this tab apply to the selected practice.
               </p>
             </div>
 
