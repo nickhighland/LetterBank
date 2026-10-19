@@ -11,6 +11,7 @@ const STORAGE_KEYS = {
   ACTIVE_TEMPLATE_ID: 'letterbank_active_template_id_v2',
   VALUES_CACHE: 'letterbank_values_cache_v2',
   LETTER_DATES: 'letterbank_letter_dates_v2',
+  LETTER_SUBJECTS: 'letterbank_letter_subjects_v1',
   SEED_PURGE: 'letterbank_seed_purge_v1',
 };
 
@@ -120,7 +121,7 @@ export const DEFAULT_LETTERHEAD = {
 
   // Continuation header on page 2 and beyond.
   showContinuationHeader: true,
-  continuationText: 'Re: {{client_name}}',
+  continuationText: 'RE: {{subject}}',
   continuationRule: true,         // hairline under the header
 
   // Page numbering.
@@ -289,10 +290,23 @@ export function resolveLetterhead(letterhead) {
   return { ...DEFAULT_LETTERHEAD, ...letterhead };
 }
 
+/**
+ * Earlier builds defaulted the page 2 header to the client's name alone. An
+ * install still on that untouched default moves to the subject line; a header
+ * the clinician wrote themselves is left as it is.
+ */
+const LEGACY_CONTINUATION_TEXT = 'Re: {{client_name}}';
+
 export function loadLetterhead() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.LETTERHEAD);
-    if (raw) return { ...DEFAULT_LETTERHEAD, ...JSON.parse(raw) };
+    if (raw) {
+      const stored = JSON.parse(raw);
+      if (stored.continuationText === LEGACY_CONTINUATION_TEXT) {
+        stored.continuationText = DEFAULT_LETTERHEAD.continuationText;
+      }
+      return { ...DEFAULT_LETTERHEAD, ...stored };
+    }
   } catch (e) {
     console.error('Error loading letterhead settings', e);
   }
@@ -360,6 +374,28 @@ export function saveLetterDates(dates) {
     localStorage.setItem(STORAGE_KEYS.LETTER_DATES, JSON.stringify(dates));
   } catch (e) {
     console.error('Error saving letter dates', e);
+  }
+}
+
+/**
+ * Per-letter subject overrides, keyed by template id. Same reasoning as the
+ * letter dates: a CSV merge replaces the values cache wholesale. An absent or
+ * empty entry means "use the template's subject".
+ */
+export function loadLetterSubjects() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.LETTER_SUBJECTS);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+export function saveLetterSubjects(subjects) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.LETTER_SUBJECTS, JSON.stringify(subjects));
+  } catch (e) {
+    console.error('Error saving letter subjects', e);
   }
 }
 

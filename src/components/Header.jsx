@@ -12,6 +12,7 @@ import {
   Moon,
   Laptop,
   Loader2,
+  FileDown,
 } from 'lucide-react';
 import { IconButton, SegmentedControl } from './ui';
 import { BrandLogo } from './BrandLogo';
@@ -24,6 +25,7 @@ export function Header({
   onOpenModal,
   onCopyText,
   onExportPdf,
+  onExportWord,
   onPrint,
   isExporting,
   theme,
@@ -116,6 +118,11 @@ export function Header({
         <IconButton onClick={onPrint} label="Print letter">
           <Printer className="w-4 h-4" />
           <span className="hidden lg:inline">Print</span>
+        </IconButton>
+
+        <IconButton onClick={onExportWord} label="Export as an editable Word document (.docx)">
+          <FileDown className="w-4 h-4" />
+          <span className="hidden lg:inline">Word</span>
         </IconButton>
 
         <button

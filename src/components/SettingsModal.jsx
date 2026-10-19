@@ -763,11 +763,11 @@ export function SettingsModal({
                   hint="Identifies the letter if printed pages are separated."
                 >
                   <div className="space-y-4 pt-3">
-                    <Field label="Header text" hint="Use {{client_name}} to insert the client's name.">
+                    <Field label="Header text" hint="{{subject}} inserts the letter's subject; {{client_name}} the client's name.">
                       <TextInput
                         value={currentLh.continuationText}
                         onChange={(e) => setLh({ continuationText: e.target.value })}
-                        placeholder="Re: {{client_name}}"
+                        placeholder="RE: {{subject}}"
                       />
                     </Field>
                   </div>

@@ -46,21 +46,98 @@ export function inferFieldType(varName) {
   return 'text';
 }
 
-export function renderTemplate(templateText, values = {}) {
+/**
+ * Field types a placeholder can take. `inferFieldType` guesses from the name;
+ * a template's own `fields` list overrides the guess, which is how a custom
+ * field picks its type when added from the editor's right-click menu.
+ */
+export const FIELD_TYPES = [
+  { value: 'text', label: 'Text' },
+  { value: 'date', label: 'Date' },
+  { value: 'time', label: 'Time' },
+  { value: 'textarea', label: 'Long text' },
+];
+
+/** Common fields offered in the editor's Insert field menu. */
+export const BUILT_IN_FIELDS = [
+  { name: 'date', type: 'date' },
+  { name: 'client_name', type: 'text' },
+  { name: 'client_first_name', type: 'text' },
+  { name: 'client_dob', type: 'date' },
+  { name: 'start_date', type: 'date' },
+  { name: 'end_date', type: 'date' },
+  { name: 'appointment_date', type: 'date' },
+  { name: 'appointment_time', type: 'time' },
+  { name: 'recipient_name', type: 'text' },
+  { name: 'recipient_organization', type: 'text' },
+  { name: 'diagnosis', type: 'text' },
+  { name: 'clinical_summary', type: 'textarea' },
+  { name: 'clinician_name', type: 'text' },
+  { name: 'practice_name', type: 'text' },
+  { name: 'practice_phone', type: 'text' },
+  { name: 'practice_email', type: 'text' },
+];
+
+/** Turn whatever the clinician typed into a valid placeholder name. */
+export function toFieldName(input) {
+  return String(input || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+/** name -> type, from a template's `fields` list. */
+export function fieldTypeMap(fields = []) {
+  const map = {};
+  (fields || []).forEach((f) => {
+    if (f?.name && FIELD_TYPES.some((t) => t.value === f.type)) map[f.name] = f.type;
+  });
+  return map;
+}
+
+/** The declared type if the template has one, otherwise a guess from the name. */
+export function fieldTypeFor(varName, types = {}) {
+  return types[varName] || inferFieldType(varName);
+}
+
+/** "14:30" -> "2:30 PM". Anything else passes through untouched. */
+export function formatTimeForDisplay(value) {
+  const m = /^(\d{2}):(\d{2})$/.exec(value || '');
+  if (!m) return value;
+  const h = Number(m[1]);
+  return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+export function renderTemplate(templateText, values = {}, types = {}) {
   if (!templateText) return '';
   return templateText.replace(/\{\{([a-zA-Z0-9_-]+)\}\}/g, (match, varName) => {
     const val = values[varName];
     if (val !== undefined && val !== null && val !== '') {
+      const str = String(val);
       // Date inputs hand back ISO (2026-08-25). A clinical letter must never
-      // read "scheduled for 2026-08-25" — render it as prose.
-      if (inferFieldType(varName) === 'date') {
-        return formatDateForDisplay(String(val));
+      // read "scheduled for 2026-08-25" — render it as prose. Checked on the
+      // value as well as the type, so a field whose declared type changed
+      // after a date was picked still prints as prose.
+      if (fieldTypeFor(varName, types) === 'date' || /^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        return formatDateForDisplay(str);
       }
-      return val;
+      if (fieldTypeFor(varName, types) === 'time') return formatTimeForDisplay(str);
+      return str;
     }
     // Return subtle placeholder if empty
     return `[${formatLabel(varName)}]`;
   });
+}
+
+/**
+ * The header printed on page 2 onward. `{{subject}}` is the letter's subject
+ * line; when a letter has none it falls back to the client's name, which is
+ * what the header carried before it knew about subjects.
+ */
+export function renderContinuationHeader(text, { subject = '', clientName = '' } = {}) {
+  const resolvedSubject = String(subject || '').trim() || clientName;
+  return renderTemplate(text || '', { subject: resolvedSubject, client_name: clientName });
 }
 
 /**

@@ -212,6 +212,21 @@ function registerIpcHandlers() {
     return { saved: true, filePath };
   });
 
+  // Ask where to save an exported Word document.
+  ipcMain.handle('docx:save', async (event, { suggestedName, buffer }) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      title: 'Save Letter as Word Document',
+      defaultPath: suggestedName,
+      filters: [{ name: 'Word Document', extensions: ['docx'] }],
+    });
+
+    if (canceled || !filePath) return { saved: false };
+
+    await fs.writeFile(filePath, Buffer.from(buffer));
+    return { saved: true, filePath };
+  });
+
   // Native print dialog, driven by the same @media print stylesheet.
   ipcMain.handle('print:letter', async (event) => {
     const wc = event.sender;

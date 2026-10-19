@@ -20,6 +20,7 @@ export function PrintPortal({
   signature,
   clinician,
   clientName,
+  subject,
   letterDate,
 }) {
   if (!pages || pages.length === 0) return null;
@@ -32,6 +33,7 @@ export function PrintPortal({
         signature={signature}
         clinician={clinician}
         clientName={clientName}
+        subject={subject}
         letterDate={letterDate}
         showMarginGuides={false}
       />

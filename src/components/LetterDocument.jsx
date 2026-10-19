@@ -1,5 +1,5 @@
 import React from 'react';
-import { formatLetterDate, renderTemplate } from '../utils/variableParser';
+import { formatLetterDate, renderContinuationHeader } from '../utils/variableParser';
 import { INDENT_STEP, parseInline } from '../utils/letterMarkup';
 import { resolveLetterhead } from '../utils/storage';
 import { PAGE_WIDTH, PAGE_HEIGHT, fillableArea } from '../constants/page';
@@ -190,6 +190,7 @@ export function LetterPage({
   signature,
   clinician,
   clientName,
+  subject,
   isSingleCentered,
   showMarginGuides = false,
   letterDate,
@@ -268,7 +269,9 @@ export function LetterPage({
                   borderBottom: letterhead.continuationRule ? undefined : 'none',
                 }}
               >
-                <span>{renderTemplate(letterhead.continuationText, { client_name: clientName })}</span>
+                <span className="letter-continuation-subject">
+                  {renderContinuationHeader(letterhead.continuationText, { subject, clientName })}
+                </span>
                 <span>
                   Page {page.pageNumber} of {page.totalPages}
                 </span>
@@ -323,6 +326,7 @@ export function LetterDocument({
   signature,
   clinician,
   clientName,
+  subject,
   showMarginGuides = false,
   letterDate,
 }) {
@@ -336,6 +340,7 @@ export function LetterDocument({
       signature={signature}
       clinician={clinician}
       clientName={clientName}
+      subject={subject}
       isSingleCentered={centerSingle}
       showMarginGuides={showMarginGuides}
       letterDate={letterDate}
