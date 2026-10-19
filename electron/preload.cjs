@@ -88,6 +88,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // --- Updates -------------------------------------------------------------
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   openReleasesPage: () => ipcRenderer.invoke('update:open'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
 
   onUpdateAvailable: (cb) => {
     const handler = (_e, info) => cb(info);

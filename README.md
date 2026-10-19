@@ -11,7 +11,11 @@ npm install
 npm run dev          # web app at http://localhost:5173
 npm run electron:dev # desktop app
 npm run electron:build   # packaged macOS build
+npm test                 # unit tests
 ```
+
+Releases are built by GitHub Actions when a version tag is pushed; see
+[SIGNING.md](SIGNING.md), which also covers code signing and notarization.
 
 ## Setting up your practice
 

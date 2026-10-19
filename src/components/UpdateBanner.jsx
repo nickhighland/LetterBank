@@ -4,8 +4,9 @@ import { ArrowDownToLine, X } from 'lucide-react';
 /**
  * A quiet strip under the header when a newer version is published.
  *
- * Not a modal: a clinician mid-letter should not be interrupted, and the
- * download is a manual step anyway while the build is unsigned.
+ * Not a modal: a clinician mid-letter should not be interrupted. A signed
+ * build offers to restart into the downloaded update; an unsigned one links
+ * to the download.
  */
 export function UpdateBanner({ update, onDownload, onDismiss }) {
   if (!update) return null;
@@ -29,7 +30,7 @@ export function UpdateBanner({ update, onDownload, onDismiss }) {
         className="h-7 px-3 text-[12px] font-semibold rounded-lg cursor-pointer transition-colors
                    bg-accent text-white hover:bg-accent-hover"
       >
-        {update.canAutoInstall ? 'Install' : 'Download'}
+        {update.canAutoInstall ? 'Restart to update' : 'Download'}
       </button>
 
       <button
