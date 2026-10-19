@@ -22,6 +22,18 @@ if (process.env.LETTERBANK_USER_DATA) app.setPath('userData', process.env.LETTER
 
 let mainWindow = null;
 
+const EXTERNAL_PROTOCOLS = new Set(['https:', 'mailto:']);
+
+function openExternalSafely(url) {
+  let protocol;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    return;
+  }
+  if (EXTERNAL_PROTOCOLS.has(protocol)) shell.openExternal(url);
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1380,
@@ -48,10 +60,20 @@ function createWindow() {
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  // Handle external links
+  // Links open in the clinician's browser or mail app, never inside
+  // LetterBank, and only web and email links: shell.openExternal will also
+  // open file: paths and other apps' URL schemes, which a letter has no
+  // business reaching.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafely(url);
     return { action: 'deny' };
+  });
+  // The window itself never leaves the app (a dropped file or a stray link
+  // would otherwise replace it, letter and all).
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url === win.webContents.getURL()) return;
+    event.preventDefault();
+    openExternalSafely(url);
   });
 
   mainWindow = win;
