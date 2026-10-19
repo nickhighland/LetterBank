@@ -2,6 +2,8 @@ import React from 'react';
 import { Sparkles, RotateCcw, User, ChevronLeft, ChevronRight, Bookmark, CalendarDays, Heading, Lock, PencilLine } from 'lucide-react';
 import { formatLabel, fieldTypeFor, formatLetterDate, toIsoDate } from '../utils/variableParser';
 import { IconButton, TextInput, Field, Badge } from './ui';
+import { isYes } from '../utils/conditions';
+import { PRONOUN_FIELD, PRONOUN_OPTIONS } from '../utils/pronouns';
 
 const CHIP =
   'px-2 py-1 rounded-md text-[11px] font-medium cursor-pointer transition-colors';
@@ -29,6 +31,7 @@ export function QuickFillPanel({
   onResetSubject,
   hasUnsavedEdits = false,
   onOpenEditor,
+  fieldDefs = {},
 }) {
   const dateShortcut = (varName, daysToAdd) => {
     const d = new Date();
@@ -199,17 +202,43 @@ export function QuickFillPanel({
           </div>
         ) : (
           variables.map((varName) => {
-            const label = formatLabel(varName);
-            const type = fieldTypeFor(varName, fieldTypes);
+            const def = fieldDefs[varName] || { name: varName, label: formatLabel(varName), type: fieldTypeFor(varName, fieldTypes), help: '', options: [] };
+            const { label, type } = def;
             const val = values[varName] ?? '';
             const hasPreset = presets?.[varName] !== undefined;
             const presetDiffers = hasPreset && val !== presets[varName];
             const isEmpty = incomplete.has(varName);
             const isFirstEmpty = isEmpty && incompleteFields[0] === varName;
 
+            // Optional wording is a checkbox: tick it and the paragraph appears.
+            if (type === 'yesno') {
+              return (
+                <label key={varName} className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isYes(val)}
+                    onChange={(e) => onChangeValue(varName, e.target.checked ? 'yes' : 'no')}
+                    className="mt-0.5 w-4 h-4 shrink-0 cursor-pointer accent-accent"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-[12px] font-semibold text-ink-secondary">{label}</span>
+                    {def.help && <span className="block text-[11px] text-ink-faint">{def.help}</span>}
+                  </span>
+                </label>
+              );
+            }
+
+            const inputProps = {
+              value: val,
+              onChange: (e) => onChangeValue(varName, e.target.value),
+              'data-empty-field': isFirstEmpty ? 'true' : undefined,
+              className: isEmpty ? '!border-warning' : '',
+            };
+
             return (
               <Field
                 key={varName}
+                hint={def.help || undefined}
                 label={
                   <>
                     <span className={isEmpty ? 'text-warning' : undefined}>{label}</span>
@@ -248,23 +277,29 @@ export function QuickFillPanel({
                 }
               >
                 {type === 'textarea' ? (
+                  <TextInput as="textarea" rows={3} placeholder={`Enter ${label.toLowerCase()}…`} {...inputProps} />
+                ) : type === 'select' ? (
                   <TextInput
-                    as="textarea"
-                    rows={3}
-                    value={val}
-                    onChange={(e) => onChangeValue(varName, e.target.value)}
-                    placeholder={`Enter ${label.toLowerCase()}…`}
-                    data-empty-field={isFirstEmpty ? 'true' : undefined}
-                    className={isEmpty ? '!border-warning' : ''}
-                  />
+                    as="select"
+                    {...inputProps}
+                    value={varName === PRONOUN_FIELD ? val || PRONOUN_OPTIONS[0] : val}
+                    aria-label={label}
+                  >
+                    {varName !== PRONOUN_FIELD && <option value="">Choose…</option>}
+                    {def.options.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                    {val && !def.options.includes(val) && <option value={val}>{val}</option>}
+                  </TextInput>
                 ) : (
                   <TextInput
-                    type={type === 'date' || type === 'time' ? type : 'text'}
-                    value={val}
-                    onChange={(e) => onChangeValue(varName, e.target.value)}
+                    type={type === 'date' || type === 'time' ? type : type === 'number' ? 'number' : 'text'}
+                    inputMode={type === 'number' ? 'decimal' : undefined}
                     placeholder={type === 'date' || type === 'time' ? undefined : `Enter ${label.toLowerCase()}…`}
-                    data-empty-field={isFirstEmpty ? 'true' : undefined}
-                    className={isEmpty ? '!border-warning' : ''}
+                    aria-label={label}
+                    {...inputProps}
                   />
                 )}
               </Field>

@@ -33,19 +33,28 @@ import {
   saveTheme,
   loadActiveTemplateId,
   saveActiveTemplateId,
+  loadFieldLibrary,
+  saveFieldLibrary,
 } from './utils/storage';
 import { onSaveError, importImageDataUrl } from './utils/persist';
 import { createBackup, readBackupFile, lettersToAdd, backupFileName } from './utils/backup';
 import { draftFrom, isDraftDirty, withDraft, dirtyTemplateIds } from './utils/templateDraft';
 import { useChoiceDialog } from './components/ChoiceDialog';
 import {
-  extractVariables,
-  renderTemplate,
   stripTrailingClosing,
   startsWithClosing,
-  fieldTypeMap,
   renderContinuationHeader,
 } from './utils/variableParser';
+import {
+  allLetterFields,
+  letterFieldsInUse,
+  resolveFieldDefs,
+  typesOf,
+  labelsOf,
+  needsValue,
+  renderLetter,
+  normaliseFieldLibrary,
+} from './utils/fieldDefs';
 import {
   exportStagedPdf,
   printStaged,
@@ -72,7 +81,7 @@ import { useUpdater } from './hooks/useUpdater';
  * never equal the string in `openModal`, so the modal would not have opened
  * even once the crash was gone.
  */
-const SETTINGS_TABS = ['presets', 'letterhead', 'signature'];
+const SETTINGS_TABS = ['presets', 'letterhead', 'signature', 'fields'];
 
 /** How a failed save is described: "Couldn't save your letterhead". */
 const SAVE_LABELS = {
@@ -83,11 +92,14 @@ const SAVE_LABELS = {
   letterhead: 'your letterhead',
   theme: 'the theme',
   activeTemplateId: 'the open letter',
+  fieldLibrary: 'your fields',
 };
 const SETTINGS_MODALS = ['settings', ...SETTINGS_TABS];
 
 /** "1 letter", "3 letters". */
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+const EMPTY_VALUES = {};
 
 export function App() {
   // ---- Persisted state -----------------------------------------------------
@@ -104,6 +116,7 @@ export function App() {
   const [signature, setSignature] = useState(loadSignature);
   const [letterhead, setLetterhead] = useState(loadLetterhead);
   const [theme, setTheme] = useState(loadTheme);
+  const [fieldLibrary, setFieldLibrary] = useState(loadFieldLibrary);
 
   // ---- Client details: memory only ------------------------------------------
   // What is typed into each letter, and each letter's own date and subject.
@@ -183,6 +196,7 @@ export function App() {
   useEffect(() => void saveSignature(signature), [signature]);
   useEffect(() => void saveLetterhead(letterhead), [letterhead]);
   useEffect(() => void saveActiveTemplateId(activeTemplateId), [activeTemplateId]);
+  useEffect(() => void saveFieldLibrary(fieldLibrary), [fieldLibrary]);
 
   // ---- Derived -------------------------------------------------------------
   const activeProfile =
@@ -285,22 +299,37 @@ export function App() {
     ? letterSubjects[activeTemplate.id]
     : activeTemplate?.subject || '';
 
-  const activeVariables = useMemo(
-    () => extractVariables((activeTemplate?.body || '') + ' ' + subjectSource),
-    [activeTemplate?.body, subjectSource]
-  );
+  const currentValues = valuesCache[activeTemplate?.id] || EMPTY_VALUES;
+  const letterSource = `${activeTemplate?.body || ''}\n\n${subjectSource}`;
 
-  /** Declared field types (Date, Time, Long text) from the template. */
-  const fieldTypes = useMemo(
-    () => fieldTypeMap(activeTemplate?.fields),
-    [activeTemplate?.fields]
-  );
+  /** Every field the letter can ask for, whichever way its options go. */
+  const allVariables = useMemo(() => allLetterFields(letterSource), [letterSource]);
 
-  const currentValues = valuesCache[activeTemplate?.id] || {};
+  /** The fields the letter uses as it stands: what Quick Fill shows. */
+  const activeVariables = useMemo(() => {
+    const names = [
+      ...letterFieldsInUse(activeTemplate?.body || '', currentValues),
+      ...letterFieldsInUse(subjectSource, currentValues),
+    ];
+    return [...new Set(names)];
+  }, [activeTemplate?.body, subjectSource, currentValues]);
+
+  /** Each field's label, type, help and choices. See utils/fieldDefs.js. */
+  const fieldDefs = useMemo(
+    () =>
+      resolveFieldDefs(allVariables, {
+        text: letterSource,
+        library: fieldLibrary,
+        templateFields: activeTemplate?.fields,
+      }),
+    [allVariables, letterSource, fieldLibrary, activeTemplate?.fields]
+  );
+  const fieldTypes = useMemo(() => typesOf(fieldDefs), [fieldDefs]);
+  const fieldLabels = useMemo(() => labelsOf(fieldDefs), [fieldDefs]);
 
   const renderedSubject = useMemo(
-    () => renderTemplate(subjectSource, currentValues, fieldTypes).trim(),
-    [subjectSource, currentValues, fieldTypes]
+    () => renderLetter(subjectSource, currentValues, fieldTypes, fieldLabels).trim(),
+    [subjectSource, currentValues, fieldTypes, fieldLabels]
   );
 
   const continuationLine = renderContinuationHeader(letterhead.continuationText, {
@@ -328,17 +357,17 @@ export function App() {
   const signatureOwnsClosing = startsWithClosing(signature.customBlockText);
 
   const renderedBody = useMemo(() => {
-    const rendered = renderTemplate(activeTemplate?.body || '', currentValues, fieldTypes);
+    const rendered = renderLetter(activeTemplate?.body || '', currentValues, fieldTypes, fieldLabels);
     return signatureOwnsClosing ? stripTrailingClosing(rendered) : rendered;
-  }, [activeTemplate?.body, currentValues, fieldTypes, signatureOwnsClosing]);
+  }, [activeTemplate?.body, currentValues, fieldTypes, fieldLabels, signatureOwnsClosing]);
 
   /**
    * Variables with no value. These render as visible placeholders such as
    * "[Client Name]", so an outbound letter must not carry them unnoticed.
    */
   const incompleteFields = useMemo(
-    () => activeVariables.filter((v) => !String(currentValues[v] ?? '').trim()),
-    [activeVariables, currentValues]
+    () => activeVariables.filter((v) => needsValue(fieldDefs[v], currentValues[v])),
+    [activeVariables, currentValues, fieldDefs]
   );
 
   /** Run `action`, unless fields are empty — then ask first. */
@@ -388,7 +417,7 @@ export function App() {
       const updated = { ...existing };
       let changed = false;
 
-      activeVariables.forEach((v) => {
+      allVariables.forEach((v) => {
         if ((updated[v] === undefined || updated[v] === '') && presets?.[v] !== undefined) {
           updated[v] = presets[v];
           changed = true;
@@ -397,7 +426,7 @@ export function App() {
 
       return changed ? { ...prev, [activeTemplate.id]: updated } : prev;
     });
-  }, [activeTemplate?.id, presets, activeVariables]);
+  }, [activeTemplate?.id, presets, allVariables]);
 
   // ---- Value editing -------------------------------------------------------
   const handleApplyPresets = useCallback(
@@ -405,7 +434,7 @@ export function App() {
       const updated = { ...(valuesCache[activeTemplate?.id] || {}) };
       let matches = 0;
 
-      activeVariables.forEach((varName) => {
+      allVariables.forEach((varName) => {
         if (customPresets[varName] !== undefined) {
           updated[varName] = customPresets[varName];
           matches++;
@@ -438,7 +467,7 @@ export function App() {
         matches === 0 ? 'info' : 'success'
       );
     },
-    [presets, valuesCache, activeTemplate?.id, activeVariables, notify]
+    [presets, valuesCache, activeTemplate?.id, allVariables, notify]
   );
 
   // ---- Practice profiles ---------------------------------------------------
@@ -455,14 +484,14 @@ export function App() {
       setPresetProfiles((prev) => ({ ...prev, activeId: id }));
 
       const updated = { ...(valuesCache[activeTemplate?.id] || {}) };
-      activeVariables.forEach((v) => {
+      allVariables.forEach((v) => {
         if (next.values[v] !== undefined) updated[v] = next.values[v];
       });
       setValuesCache((prev) => ({ ...prev, [activeTemplate?.id]: updated }));
 
       notify(`Switched to ${next.name}`, 'info');
     },
-    [presetProfiles.profiles, valuesCache, activeTemplate?.id, activeVariables, notify]
+    [presetProfiles.profiles, valuesCache, activeTemplate?.id, allVariables, notify]
   );
 
   const handleAddProfile = useCallback(
@@ -538,7 +567,7 @@ export function App() {
     const id = activeTemplate.id;
     const before = valuesCache[id];
     const empty = {};
-    activeVariables.forEach((v) => {
+    allVariables.forEach((v) => {
       empty[v] = '';
     });
     setValuesCache((prev) => ({ ...prev, [id]: empty }));
@@ -550,25 +579,24 @@ export function App() {
         ? { label: 'Undo', run: () => setValuesCache((prev) => ({ ...prev, [id]: before })) }
         : null
     );
-  }, [activeVariables, activeTemplate?.id, valuesCache, notify]);
+  }, [allVariables, activeTemplate?.id, valuesCache, notify]);
 
   const handleFillSampleData = useCallback(() => {
     const sample = {};
-    if (activeTemplate?.fields?.length) {
-      activeTemplate.fields.forEach((f) => {
-        sample[f.name] = f.defaultValue || '';
-      });
-    } else {
-      activeVariables.forEach((v) => {
-        if (v.includes('name')) sample[v] = 'Jordan Taylor';
-        else if (v.includes('date')) sample[v] = '2026-08-25';
-        else if (v.includes('time')) sample[v] = '11:00 AM';
-        else sample[v] = 'Sample Clinical Detail';
-      });
-    }
+    allVariables.forEach((v) => {
+      const def = fieldDefs[v];
+      if (def?.defaultValue) sample[v] = def.defaultValue;
+      else if (def?.type === 'select') sample[v] = def.options[0] || '';
+      else if (def?.type === 'yesno') sample[v] = 'yes';
+      else if (def?.type === 'number') sample[v] = '3';
+      else if (def?.type === 'date') sample[v] = '2026-08-25';
+      else if (def?.type === 'time') sample[v] = '11:00';
+      else if (v.includes('name')) sample[v] = 'Jordan Taylor';
+      else sample[v] = 'Sample Clinical Detail';
+    });
     setValuesCache((prev) => ({ ...prev, [activeTemplate.id]: sample }));
     notify('Filled with sample data', 'info');
-  }, [activeTemplate, activeVariables, notify]);
+  }, [activeTemplate, allVariables, fieldDefs, notify]);
 
   // ---- Copy ----------------------------------------------------------------
   /**
@@ -702,6 +730,15 @@ export function App() {
     notify(`Created "${newTpl.title}"`);
   };
 
+  /** Add a field to My fields, or update the one with its name. */
+  const handleSaveLibraryField = useCallback((def) => {
+    setFieldLibrary((prev) => {
+      const at = prev.findIndex((f) => f.name === def.name);
+      const next = at === -1 ? [...prev, def] : prev.map((f, i) => (i === at ? def : f));
+      return normaliseFieldLibrary(next);
+    });
+  }, []);
+
   /** Throw away unsaved edits to the open template, after asking. */
   const handleDiscardDraft = async () => {
     if (!draftDirty) return;
@@ -779,6 +816,7 @@ export function App() {
         signature,
         letterhead,
         theme,
+        fieldLibrary,
       });
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
@@ -857,7 +895,7 @@ export function App() {
       message:
         `Made ${made}, with ${plural(restored.templates.length, 'letter')}, ` +
         `${plural(restored.presetProfiles.profiles.length, 'practice')}, and your letterhead, signature and preferences.\n\n` +
-        'Restoring everything replaces all of these in LetterBank now. Adding letters only leaves everything else as it is.',
+        'Restoring everything replaces all of these, and My fields, in LetterBank now. Adding letters only leaves everything else as it is.',
       choices: [
         { value: 'letters', label: 'Add letters only' },
         { value: 'all', label: 'Restore everything', primary: true },
@@ -877,6 +915,7 @@ export function App() {
       setLetterhead({ ...restored.letterhead, url: letterheadUrl });
       setSignature({ ...restored.signature, url: signatureUrl });
       setTheme(restored.theme);
+      setFieldLibrary(restored.fieldLibrary);
       notify('Backup restored');
     } catch (err) {
       notify(`Restore failed: ${err.message}`, 'error');
@@ -888,7 +927,7 @@ export function App() {
     setCsvRecordIndex(idx);
     setValuesCache((prev) => ({
       ...prev,
-      [activeTemplate.id]: mergeRecordValues(records[idx].values, presets, activeVariables),
+      [activeTemplate.id]: mergeRecordValues(records[idx].values, presets, allVariables),
     }));
   };
 
@@ -909,8 +948,8 @@ export function App() {
    */
   const stageRecord = useCallback(
     async (record) => {
-      const rowValues = mergeRecordValues(record.values, presets, activeVariables);
-      const raw = renderTemplate(activeTemplate.body, rowValues, fieldTypes);
+      const rowValues = mergeRecordValues(record.values, presets, allVariables);
+      const raw = renderLetter(activeTemplate.body, rowValues, fieldTypes, fieldLabels);
       const body = signatureOwnsClosing ? stripTrailingClosing(raw) : raw;
 
       const recordPages = paginateLetter({
@@ -925,13 +964,13 @@ export function App() {
         setPrintOverride({
           pages: recordPages,
           clientName: rowValues.client_name || '',
-          subject: renderTemplate(subjectSource, rowValues, fieldTypes).trim(),
+          subject: renderLetter(subjectSource, rowValues, fieldTypes, fieldLabels).trim(),
         });
       });
     },
     [
       presets,
-      activeVariables,
+      allVariables,
       activeTemplate,
       letterhead,
       signature,
@@ -939,6 +978,7 @@ export function App() {
       signatureOwnsClosing,
       subjectSource,
       fieldTypes,
+      fieldLabels,
     ]
   );
 
@@ -1052,6 +1092,7 @@ export function App() {
             letterhead={letterhead}
             incompleteFields={incompleteFields}
             fieldTypes={fieldTypes}
+            fieldDefs={fieldDefs}
             subjectSource={subjectSource}
             subjectOverridden={subjectOverridden}
             continuationLine={continuationLine}
@@ -1067,6 +1108,8 @@ export function App() {
             onSaveTemplate={handleSaveTemplate}
             onSaveAsNew={(tpl) => handleSaveAsNewTemplate(tpl, savedTemplate?.id)}
             onDiscard={handleDiscardDraft}
+            fieldLibrary={fieldLibrary}
+            onSaveLibraryField={handleSaveLibraryField}
           />
         )}
 
@@ -1115,6 +1158,8 @@ export function App() {
         onSaveSignature={setSignature}
         clinician={clinician}
         onSaveClinician={setClinician}
+        fieldLibrary={fieldLibrary}
+        onSaveFieldLibrary={setFieldLibrary}
         onNotify={notify}
       />
 
@@ -1122,8 +1167,15 @@ export function App() {
         isOpen={openModal === 'batch'}
         onClose={() => setOpenModal(null)}
         template={activeTemplate}
-        variables={activeVariables}
+        variables={allVariables}
+        fieldDefs={fieldDefs}
         fieldTypes={fieldTypes}
+        fieldsFor={(values) => [
+          ...new Set([
+            ...letterFieldsInUse(activeTemplate?.body || '', values),
+            ...letterFieldsInUse(subjectSource, values),
+          ]),
+        ]}
         presets={presets}
         onApplyCsvBatch={handleApplyCsvBatch}
         onBatchExportZip={handleBatchExportZip}
@@ -1141,6 +1193,7 @@ export function App() {
       <IncompleteFieldsModal
         pending={pendingAction}
         fields={incompleteFields}
+        labels={fieldLabels}
         onClose={() => setPendingAction(null)}
         onContinue={() => {
           const action = pendingAction?.run;

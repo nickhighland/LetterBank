@@ -6,6 +6,7 @@ import {
   isMigrated,
   finishMigration,
 } from './persist';
+import { normaliseFieldLibrary } from './fieldDefs';
 
 /**
  * Client details that older versions kept in localStorage: the values typed
@@ -244,6 +245,10 @@ export function loadLetterhead() {
 }
 
 export const saveLetterhead = (lh) => saveSetting('letterhead', lh);
+
+/** The clinician's own field definitions (Settings › My fields). */
+export const loadFieldLibrary = () => normaliseFieldLibrary(readSetting('fieldLibrary'));
+export const saveFieldLibrary = (library) => saveSetting('fieldLibrary', library);
 
 export function loadTheme() {
   return readSetting('theme') || 'system';

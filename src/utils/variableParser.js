@@ -1,6 +1,7 @@
 /**
  * Variable parser and template replacement engine
  */
+import { isYes } from './conditions';
 
 export function extractVariables(text) {
   if (!text) return [];
@@ -48,19 +49,29 @@ export function inferFieldType(varName) {
 
 /**
  * Field types a placeholder can take. `inferFieldType` guesses from the name;
- * a template's own `fields` list overrides the guess, which is how a custom
- * field picks its type when added from the editor's right-click menu.
+ * a definition (the clinician's field library, or the template's own `fields`
+ * list) overrides the guess. See utils/fieldDefs.js.
  */
 export const FIELD_TYPES = [
   { value: 'text', label: 'Text' },
+  { value: 'textarea', label: 'Long text' },
   { value: 'date', label: 'Date' },
   { value: 'time', label: 'Time' },
-  { value: 'textarea', label: 'Long text' },
+  { value: 'number', label: 'Number' },
+  { value: 'select', label: 'Dropdown' },
+  { value: 'yesno', label: 'Yes/No' },
 ];
 
 /** Common fields offered in the editor's Insert field menu. */
 export const BUILT_IN_FIELDS = [
   { name: 'date', type: 'date' },
+  {
+    name: 'pronouns',
+    label: 'Pronouns',
+    type: 'select',
+    options: ['they/them', 'she/her', 'he/him'],
+    help: 'Fills {{they}}, {{them}}, {{their}}, {{they_are}} and the rest.',
+  },
   { name: 'client_name', type: 'text' },
   { name: 'client_first_name', type: 'text' },
   { name: 'client_dob', type: 'date' },
@@ -109,10 +120,13 @@ export function formatTimeForDisplay(value) {
   return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-export function renderTemplate(templateText, values = {}, types = {}) {
+/** `labels` (name -> label) names the placeholder an empty field prints. */
+export function renderTemplate(templateText, values = {}, types = {}, labels = {}) {
   if (!templateText) return '';
   return templateText.replace(/\{\{([a-zA-Z0-9_-]+)\}\}/g, (match, varName) => {
     const val = values[varName];
+    // A Yes/No field left unticked is a No, not a missing value.
+    if (types[varName] === 'yesno') return isYes(val) ? 'Yes' : 'No';
     if (val !== undefined && val !== null && val !== '') {
       const str = String(val);
       // Date inputs hand back ISO (2026-08-25). A clinical letter must never
@@ -126,7 +140,7 @@ export function renderTemplate(templateText, values = {}, types = {}) {
       return str;
     }
     // Return subtle placeholder if empty
-    return `[${formatLabel(varName)}]`;
+    return `[${labels[varName] || formatLabel(varName)}]`;
   });
 }
 

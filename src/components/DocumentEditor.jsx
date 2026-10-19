@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Save, Copy, RotateCcw, Braces } from 'lucide-react';
-import { extractVariables, fieldTypeMap, inferFieldType, formatLabel } from '../utils/variableParser';
+import { inferFieldType, formatLabel } from '../utils/variableParser';
+import { allLetterFields, resolveFieldDefs } from '../utils/fieldDefs';
+import { FieldSettingsModal } from './FieldSettingsModal';
+import { TYPE_ICONS } from './FieldForm';
 import { TEMPLATE_CATEGORIES } from '../data/defaultTemplates';
-import { Button, TextInput, Field, Badge } from './ui';
+import { Button, TextInput, Field } from './ui';
 import { FormatToolbar } from './FormatToolbar';
 import { MarkupHelpModal } from './MarkupHelpModal';
 import { FieldMenu } from './FieldMenu';
@@ -12,13 +15,24 @@ import { FieldMenu } from './FieldMenu';
  * here, switching to Quick Fill unmounted the editor and threw unsaved edits
  * away without asking, and the preview never showed them until Save.
  */
-export function DocumentEditor({ template, draft, isDirty, onChangeDraft, onSaveTemplate, onSaveAsNew, onDiscard }) {
+export function DocumentEditor({
+  template,
+  draft,
+  isDirty,
+  onChangeDraft,
+  onSaveTemplate,
+  onSaveAsNew,
+  onDiscard,
+  fieldLibrary = [],
+  onSaveLibraryField,
+}) {
   const bodyRef = useRef(null);
   const [showHelp, setShowHelp] = useState(false);
 
   const subjectRef = useRef(null);
   // { x, y, target: 'body' | 'subject' } while the Insert field menu is open.
   const [fieldMenu, setFieldMenu] = useState(null);
+  const [editingField, setEditingField] = useState(null);
 
   useEffect(() => {
     setFieldMenu(null);
@@ -27,7 +41,29 @@ export function DocumentEditor({ template, draft, isDirty, onChangeDraft, onSave
   const set = (patch) => onChangeDraft((prev) => ({ ...prev, ...patch }));
   const setDraft = onChangeDraft;
 
-  const variables = extractVariables(`${draft.subject} ${draft.body}`);
+  const letterText = `${draft.body}\n\n${draft.subject}`;
+  const variables = allLetterFields(letterText);
+  const defs = resolveFieldDefs(variables, {
+    text: letterText,
+    library: fieldLibrary,
+    templateFields: draft.fields,
+  });
+
+  /** Keep a field's definition on the letter (or drop it when a guess would do). */
+  const recordField = (def) =>
+    setDraft((prev) => {
+      const plain =
+        def.type === inferFieldType(def.name) &&
+        def.label === formatLabel(def.name) &&
+        !def.help &&
+        !(def.options || []).length;
+      const others = prev.fields.filter((f) => f.name !== def.name);
+      const known = prev.fields.find((f) => f.name === def.name);
+      if (plain && !known) return prev;
+      const entry = { ...def, defaultValue: known?.defaultValue ?? def.defaultValue ?? '' };
+      delete entry.source;
+      return { ...prev, fields: plain ? others : [...others, entry] };
+    });
 
   /** Insert at the caret, not blindly at the end. */
   const insertVariable = (name, target = 'body') => {
@@ -48,22 +84,50 @@ export function DocumentEditor({ template, draft, isDirty, onChangeDraft, onSave
   };
 
   /**
-   * Insert from the field menu. A type that differs from what the name alone
-   * would suggest is recorded on the template, so Quick Fill offers the right
-   * picker — "return_to_work" picked as a Date gets a date picker.
+   * Insert from the field menu. The field's definition is kept on the letter
+   * when a guess from its name would get it wrong ("return_to_work" picked as
+   * a Date), and as a copy when it comes from My fields, so the letter still
+   * works if that field is later deleted.
    */
-  const insertField = (name, type) => {
+  const insertField = (def, { saveToLibrary = false, pronoun = false } = {}) => {
     const target = fieldMenu?.target || 'body';
     setFieldMenu(null);
+    if (!pronoun) {
+      if (saveToLibrary) onSaveLibraryField?.(def);
+      recordField(def);
+    }
+    insertVariable(def.name, target);
+  };
+
+  /** Wrap the selection in [[if name]] … [[end]], so it prints only when ticked. */
+  const makeOptional = (name) => {
+    setFieldMenu(null);
+    const el = bodyRef.current;
     setDraft((prev) => {
-      const known = prev.fields.find((f) => f.name === name);
-      if (known ? known.type === type : inferFieldType(name) === type) return prev;
-      const fields = known
-        ? prev.fields.map((f) => (f.name === name ? { ...f, type } : f))
-        : [...prev.fields, { name, label: formatLabel(name), type, defaultValue: '' }];
-      return { ...prev, fields };
+      const text = prev.body;
+      const start = el?.selectionStart ?? text.length;
+      const end = el?.selectionEnd ?? text.length;
+      const selected = text.slice(start, end);
+      const lineStart = start === 0 || text[start - 1] === '\n';
+      const lineEnd = end === text.length || text[end] === '\n';
+      // Whole lines get markers on lines of their own; part of a line, inline.
+      const wrapped =
+        selected && !(lineStart && lineEnd) && !selected.includes('\n')
+          ? `[[if ${name}]]${selected}[[end]]`
+          : `${lineStart ? '' : '\n'}[[if ${name}]]\n${selected || 'Optional wording.'}\n[[end]]${lineEnd ? '' : '\n'}`;
+      requestAnimationFrame(() => {
+        el?.focus();
+        el?.setSelectionRange(start, start + wrapped.length);
+      });
+      return { ...prev, body: text.slice(0, start) + wrapped + text.slice(end) };
     });
-    insertVariable(name, target);
+  };
+
+  /** Saved from the field settings dialog. */
+  const saveFieldSettings = (def, { inLibrary, saveToLibrary }) => {
+    setEditingField(null);
+    if (inLibrary || saveToLibrary) onSaveLibraryField?.(def);
+    if (!inLibrary) recordField(def);
   };
 
   const openFieldMenu = (target) => (e) => {
@@ -163,17 +227,23 @@ export function DocumentEditor({ template, draft, isDirty, onChangeDraft, onSave
               {variables.length} field{variables.length === 1 ? '' : 's'} in this letter
             </span>
             <div className="flex flex-wrap gap-1">
-              {variables.map((v) => (
-                <button
-                  key={v}
-                  onClick={() => insertVariable(v)}
-                  title={`Insert {{${v}}} at the cursor`}
-                  className="cursor-pointer"
-                >
-                  <Badge tone="accent">{v}</Badge>
-                </button>
-              ))}
+              {variables.map((v) => {
+                const Icon = TYPE_ICONS[defs[v]?.type] || TYPE_ICONS.text;
+                return (
+                  <button
+                    key={v}
+                    onClick={() => v !== 'pronouns' && setEditingField(defs[v])}
+                    title={v === 'pronouns' ? 'Pronouns are chosen in Quick Fill' : `Field settings for {{${v}}}`}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11.5px] font-medium cursor-pointer
+                               bg-accent-soft text-accent-ink hover:brightness-95"
+                  >
+                    <Icon className="w-3 h-3" />
+                    {defs[v]?.label || v}
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-[11px] text-ink-faint">Click a field to change its label, type or choices.</p>
           </div>
         )}
       </div>
@@ -218,12 +288,20 @@ export function DocumentEditor({ template, draft, isDirty, onChangeDraft, onSave
 
       <MarkupHelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
 
+      <FieldSettingsModal
+        field={editingField}
+        onClose={() => setEditingField(null)}
+        onSave={saveFieldSettings}
+      />
+
       {fieldMenu && (
         <FieldMenu
           position={fieldMenu}
           existing={variables}
-          types={fieldTypeMap(draft.fields)}
+          defs={defs}
+          library={fieldLibrary}
           onInsert={insertField}
+          onOptional={fieldMenu.target === 'body' ? makeOptional : undefined}
           onClose={() => setFieldMenu(null)}
         />
       )}

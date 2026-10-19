@@ -1,4 +1,5 @@
 import { imageUrlToDataUrl } from './persist';
+import { normaliseFieldLibrary } from './fieldDefs';
 import {
   normaliseTemplates,
   normaliseProfiles,
@@ -20,7 +21,15 @@ export const BACKUP_FORMAT = 'letterbank-backup';
 export const BACKUP_VERSION = 1;
 
 /** The settings a backup carries. */
-export const BACKUP_KEYS = ['templates', 'presetProfiles', 'clinician', 'signature', 'letterhead', 'theme'];
+export const BACKUP_KEYS = [
+  'templates',
+  'presetProfiles',
+  'clinician',
+  'signature',
+  'letterhead',
+  'theme',
+  'fieldLibrary',
+];
 
 const IMAGE_KEYS = new Set(['signature', 'letterhead']);
 const THEMES = new Set(['light', 'dark', 'system']);
@@ -91,6 +100,7 @@ export function readBackupFile(text) {
       signature: objectOr(raw.signature, DEFAULT_SIGNATURE),
       letterhead: objectOr(raw.letterhead, DEFAULT_LETTERHEAD),
       theme: THEMES.has(raw.theme) ? raw.theme : 'system',
+      fieldLibrary: normaliseFieldLibrary(raw.fieldLibrary),
     },
   };
 }

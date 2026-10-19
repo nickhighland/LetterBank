@@ -13,6 +13,7 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  Braces,
 } from 'lucide-react';
 import {
   DEFAULT_PRESETS,
@@ -25,6 +26,8 @@ import { importImageFile, importImageDataUrl } from '../utils/persist';
 import { fillableArea, pxToInches, inchesToPx } from '../constants/page';
 import { Modal, Button, Field, TextInput, SegmentedControl } from './ui';
 import { resolveSignatureTokens } from './LetterDocument';
+import { FieldLibraryPanel } from './FieldLibraryPanel';
+import { normaliseFieldLibrary } from '../utils/fieldDefs';
 
 // ---- Letterhead Constants ----
 const MARGIN_PRESETS = [
@@ -220,6 +223,8 @@ export function SettingsModal({
   onSaveSignature,
   clinician,
   onSaveClinician,
+  fieldLibrary = [],
+  onSaveFieldLibrary,
   onNotify,
 }) {
   // Main settings tab: 'presets' | 'letterhead' | 'signature'
@@ -234,6 +239,8 @@ export function SettingsModal({
   const [currentLh, setCurrentLh] = useState(letterhead);
   const [currentSig, setCurrentSig] = useState(signature);
   const [currentClin, setCurrentClin] = useState(clinician);
+  const [currentFields, setCurrentFields] = useState(fieldLibrary);
+  const [selectedField, setSelectedField] = useState(null);
 
   // Presets custom fields state
   const [customKey, setCustomKey] = useState('');
@@ -247,7 +254,12 @@ export function SettingsModal({
       setCurrentLh({ ...DEFAULT_LETTERHEAD, ...letterhead });
       setCurrentSig(signature || DEFAULT_SIGNATURE);
       setCurrentClin(clinician || DEFAULT_CLINICIAN);
+      setCurrentFields(fieldLibrary);
+      setSelectedField(null);
     }
+    // fieldLibrary is read when the dialog opens; saving it here would reset
+    // the field being edited.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialTab, presets, letterhead, signature, clinician]);
 
   const setLh = (patch) => setCurrentLh((prev) => ({ ...prev, ...patch }));
@@ -320,6 +332,7 @@ export function SettingsModal({
     onSaveLetterhead(currentLh);
     onSaveSignature(currentSig);
     onSaveClinician(currentClin);
+    onSaveFieldLibrary?.(normaliseFieldLibrary(currentFields));
     onApplyPresetsToCurrentLetter?.(currentPresets);
     onClose();
   };
@@ -336,15 +349,19 @@ export function SettingsModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Settings & Defaults"
-      subtitle="Configure practice presets, letterhead layout, and digital signatures."
+      subtitle="Configure practice presets, letterhead layout, digital signatures and your own fields."
       icon={Sliders}
       width="max-w-3xl"
       footer={
         <>
-          <Button variant="ghost" onClick={handleResetCurrentTab} className="mr-auto">
-            <RotateCcw className="w-3.5 h-3.5" />
-            Reset {mainTab === 'presets' ? 'presets' : mainTab === 'letterhead' ? 'letterhead' : 'signature'}
-          </Button>
+          {mainTab === 'fields' ? (
+            <span className="mr-auto" />
+          ) : (
+            <Button variant="ghost" onClick={handleResetCurrentTab} className="mr-auto">
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset {mainTab === 'presets' ? 'presets' : mainTab === 'letterhead' ? 'letterhead' : 'signature'}
+            </Button>
+          )}
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
@@ -363,11 +380,22 @@ export function SettingsModal({
             { value: 'presets', label: 'Presets', Icon: Bookmark },
             { value: 'letterhead', label: 'Letterhead', Icon: ImageIcon },
             { value: 'signature', label: 'Signature', Icon: PenTool },
+            { value: 'fields', label: 'My fields', Icon: Braces },
           ]}
         />
       </div>
 
       <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+        {mainTab === 'fields' && (
+          <FieldLibraryPanel
+            fields={currentFields}
+            onChange={setCurrentFields}
+            selected={selectedField}
+            onSelect={setSelectedField}
+            savedNames={fieldLibrary.map((f) => f.name)}
+          />
+        )}
+
         {/* ======================= TAB 1: PRESETS ======================= */}
         {mainTab === 'presets' && (
           <div className="space-y-6">

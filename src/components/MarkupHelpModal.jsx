@@ -49,6 +49,23 @@ const SECTIONS = [
       ['{{client_name}}', <span key="s3">Alex Morgan</span>, 'Becomes a Quick Fill field'],
     ],
   },
+  {
+    title: 'Optional wording — on its own lines, or inside a sentence',
+    rows: [
+      ['[[if telehealth]] … [[end]]', <span key="c1">…</span>, 'Prints only when Telehealth is ticked in Quick Fill'],
+      ['[[if telehealth]] … [[else]] … [[end]]', <span key="c2">one or the other</span>, 'The second part prints when it is not ticked'],
+      ['[[if platform = Zoom]] … [[end]]', <span key="c3">…</span>, 'Prints when a field reads Zoom'],
+      ['[[if not telehealth]] … [[end]]', <span key="c4">…</span>, 'Prints when it is not ticked'],
+    ],
+  },
+  {
+    title: 'Pronouns — set once with the Pronouns field',
+    rows: [
+      ['{{they}} {{them}} {{their}}', <span key="p1">she her her</span>, 'Also {{theirs}} and {{themselves}}'],
+      ['{{they_are}} {{they_were}} {{they_have}}', <span key="p2">she is · she was · she has</span>, 'The verb agrees'],
+      ['{{They}} {{Their}} {{They_are}}', <span key="p3">She · Her · She is</span>, 'Capitalised, to start a sentence'],
+    ],
+  },
 ];
 
 export function MarkupHelpModal({ isOpen, onClose }) {

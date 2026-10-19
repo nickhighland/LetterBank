@@ -20,6 +20,7 @@ import {
   readMappedValue,
 } from '../utils/csvParser';
 import { findBatchGaps } from '../utils/batch';
+import { needsValue } from '../utils/fieldDefs';
 import { formatLabel } from '../utils/variableParser';
 import { Modal, Button } from './ui';
 
@@ -33,6 +34,8 @@ export function BatchMergeModal({
   template,
   variables,
   fieldTypes = {},
+  fieldDefs = {},
+  fieldsFor,
   presets,
   onApplyCsvBatch,
   onBatchExportZip,
@@ -84,9 +87,19 @@ export function BatchMergeModal({
   // Rows whose letters would print placeholders such as "[Intake Date]".
   // Single letters ask before they leave the app; a batch lists them here.
   const gaps = useMemo(
-    () => (parsed ? findBatchGaps(parsed.records, variables, presets) : []),
-    [parsed, variables, presets]
+    () =>
+      parsed
+        ? findBatchGaps(parsed.records, variables, presets, {
+            fieldsFor,
+            isMissing: (name, value) => needsValue(fieldDefs[name], value),
+          })
+        : [],
+    // fieldsFor is rebuilt on every render; the letter it reads is in `variables`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [parsed, variables, presets, fieldDefs]
   );
+
+  const labelOf = (name) => fieldDefs[name]?.label || formatLabel(name);
 
   const progressPct = batchProgress.total
     ? (batchProgress.current / batchProgress.total) * 100
@@ -223,7 +236,7 @@ export function BatchMergeModal({
                 <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
                 <span>
                   <strong className="font-semibold">No column found for </strong>
-                  {unmatched.map(formatLabel).join(', ')}. Pick a column below, or these print as
+                  {unmatched.map(labelOf).join(', ')}. Pick a column below, or these print as
                   placeholders.
                 </span>
               </div>
@@ -254,10 +267,10 @@ export function BatchMergeModal({
                         ) : (
                           <AlertCircle className="w-3.5 h-3.5 shrink-0 text-warning" />
                         )}
-                        <span className="truncate">{formatLabel(v)}</span>
+                        <span className="truncate">{labelOf(v)}</span>
                       </span>
                       <select
-                        aria-label={`Column for ${formatLabel(v)}`}
+                        aria-label={`Column for ${labelOf(v)}`}
                         value={column}
                         onChange={(e) => setColumn(v, e.target.value)}
                         className={SELECT}
@@ -294,7 +307,7 @@ export function BatchMergeModal({
                     <li key={row.index} className="text-[12px] text-ink-secondary">
                       <span className="font-semibold text-ink">{row.label}</span>
                       {' — '}
-                      {row.missing.map(formatLabel).join(', ')}
+                      {row.missing.map(labelOf).join(', ')}
                     </li>
                   ))}
                 </ul>

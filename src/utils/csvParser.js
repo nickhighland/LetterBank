@@ -1,5 +1,6 @@
 import Papa from 'papaparse';
-import { fieldTypeFor, normalizeDate, normalizeTime } from './variableParser';
+import { fieldTypeFor } from './variableParser';
+import { normaliseFieldValue } from './fieldDefs';
 
 /**
  * Parses CSV file and auto-maps columns to template variables
@@ -147,9 +148,9 @@ export function readMappedValue(row, mapping) {
 }
 
 /**
- * One record per row. Dates and times are normalised to what the pickers use
- * (2026-10-22, 14:30), so "10/22/2026" prints as "October 22, 2026" like a
- * date picked by hand, and shows in the date picker instead of a blank.
+ * One record per row. Values are normalised to what the pickers use: dates
+ * and times (2026-10-22, 14:30), so "10/22/2026" prints as "October 22, 2026"
+ * like a date picked by hand; Yes/No answers ("TRUE", "Y"); pronouns.
  */
 export function generateMergedRecords(csvRows, columnMapping, types = {}) {
   return csvRows.map((row, index) => {
@@ -157,9 +158,7 @@ export function generateMergedRecords(csvRows, columnMapping, types = {}) {
     Object.entries(columnMapping).forEach(([templateVar, csvCol]) => {
       const value = readMappedValue(row, csvCol);
       if (value === undefined) return;
-      const type = fieldTypeFor(templateVar, types);
-      recordValues[templateVar] =
-        type === 'date' ? normalizeDate(value) : type === 'time' ? normalizeTime(value) : value;
+      recordValues[templateVar] = normaliseFieldValue(value, fieldTypeFor(templateVar, types), templateVar);
     });
     return {
       _rowIndex: index + 1,
