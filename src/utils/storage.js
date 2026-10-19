@@ -135,7 +135,7 @@ export function makeProfile(name, values = {}) {
   return { id: makeProfileId(), name, values: { ...DEFAULT_PRESETS, ...values } };
 }
 
-function normaliseProfiles(raw) {
+export function normaliseProfiles(raw) {
   const profiles = (raw?.profiles || [])
     .filter((p) => p && typeof p === 'object')
     .map((p) => ({

@@ -33,9 +33,9 @@ import {
   saveTheme,
   loadActiveTemplateId,
   saveActiveTemplateId,
-  normaliseTemplates,
 } from './utils/storage';
-import { onSaveError } from './utils/persist';
+import { onSaveError, importImageDataUrl } from './utils/persist';
+import { createBackup, readBackupFile, lettersToAdd, backupFileName } from './utils/backup';
 import { draftFrom, isDraftDirty, withDraft, dirtyTemplateIds } from './utils/templateDraft';
 import { useChoiceDialog } from './components/ChoiceDialog';
 import {
@@ -85,6 +85,9 @@ const SAVE_LABELS = {
   activeTemplateId: 'the open letter',
 };
 const SETTINGS_MODALS = ['settings', ...SETTINGS_TABS];
+
+/** "1 letter", "3 letters". */
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 export function App() {
   // ---- Persisted state -----------------------------------------------------
@@ -765,79 +768,119 @@ export function App() {
     notify('Library reset to defaults', 'info');
   };
 
-  const handleExportTemplatesJson = () => {
-    const blob = new Blob([JSON.stringify(templates, null, 2)], {
-      type: 'application/json',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `LetterBank_Templates_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    notify(`Backed up ${templates.length} templates`);
+  // ---- Backup and restore ---------------------------------------------------
+  /** Letters, practices, letterhead, signature and preferences. Never clients. */
+  const handleBackup = async () => {
+    try {
+      const backup = await createBackup({
+        templates,
+        presetProfiles,
+        clinician,
+        signature,
+        letterhead,
+        theme,
+      });
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = backupFileName();
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      notify(`Backed up ${plural(templates.length, 'letter')}, your practices, letterhead and signature`);
+    } catch (err) {
+      notify(`Backup failed: ${err.message}`, 'error');
+    }
   };
 
-  /**
-   * Restore letters from a backup file. Asks whether to add them to the
-   * library or replace it; it used to replace everything without asking.
-   */
-  const handleImportTemplatesJson = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-
-    let imported;
-    try {
-      imported = normaliseTemplates(JSON.parse(await file.text()));
-      if (!imported) throw new Error('That file has no letters in it');
-    } catch (err) {
-      notify(`Restore failed: ${err.message}`, 'error');
-      return;
-    }
-
-    const count = `${imported.length} letter${imported.length === 1 ? '' : 's'}`;
-    const answer = await ask({
-      title: `Restore ${count}?`,
-      message:
-        `Add them to your library, or replace your library with them.\n\n` +
-        `Replacing removes the ${templates.length} letters you have now.`,
-      choices: [
-        { value: 'replace', label: 'Replace library', danger: true },
-        { value: 'add', label: 'Add to library', primary: true },
-      ],
-    });
-    if (!answer) return;
-
-    if (answer === 'replace') {
-      setTemplates(imported);
-      setTemplateDrafts({});
-      setActiveTemplateId(imported[0].id);
-      notify(`Replaced your library with ${count}`);
-      return;
-    }
-
-    // Adding: a letter the library already has word for word is skipped; one
-    // that shares an id with a different letter comes in as a copy with its
-    // own id, so nothing already there is overwritten.
-    const contentOf = (t) => JSON.stringify(draftFrom(t));
-    const ids = new Set(templates.map((t) => t.id));
-    const contents = new Set(templates.map(contentOf));
-    const added = [];
-    imported.forEach((tpl, i) => {
-      if (contents.has(contentOf(tpl))) return;
-      const entry = ids.has(tpl.id) ? { ...tpl, id: `custom-${Date.now()}-${i}`, isCustom: true } : tpl;
-      ids.add(entry.id);
-      contents.add(contentOf(entry));
-      added.push(entry);
-    });
+  /** Add letters from a backup to the library, skipping ones already there. */
+  const addLetters = (imported) => {
+    const added = lettersToAdd(templates, imported);
     if (!added.length) {
       notify('Every letter in that file is already in your library', 'info');
       return;
     }
     setTemplates((prev) => [...added, ...prev]);
     setActiveTemplateId(added[0].id);
-    notify(`Added ${added.length} letter${added.length === 1 ? '' : 's'} to your library`);
+    notify(`Added ${plural(added.length, 'letter')} to your library`);
+  };
+
+  const replaceLetters = (imported) => {
+    setTemplates(imported);
+    setTemplateDrafts({});
+    setActiveTemplateId(imported[0].id);
+  };
+
+  /**
+   * Restore from a backup file, after asking what to restore. Restore used to
+   * replace the whole library without asking.
+   */
+  const handleRestore = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    let backup;
+    try {
+      backup = readBackupFile(await file.text());
+    } catch (err) {
+      notify(`Restore failed: ${err.message}`, 'error');
+      return;
+    }
+
+    if (backup.kind === 'letters') {
+      const count = plural(backup.templates.length, 'letter');
+      const answer = await ask({
+        title: `Restore ${count}?`,
+        message:
+          `Add them to your library, or replace your library with them.\n\n` +
+          `Replacing removes the ${templates.length} letters you have now.`,
+        choices: [
+          { value: 'replace', label: 'Replace library', danger: true },
+          { value: 'add', label: 'Add to library', primary: true },
+        ],
+      });
+      if (answer === 'add') addLetters(backup.templates);
+      if (answer === 'replace') {
+        replaceLetters(backup.templates);
+        notify(`Replaced your library with ${count}`);
+      }
+      return;
+    }
+
+    const restored = backup.settings;
+    const made = backup.createdAt
+      ? new Date(backup.createdAt).toLocaleDateString(undefined, { dateStyle: 'long' })
+      : 'an unknown date';
+    const answer = await ask({
+      title: 'Restore this backup?',
+      message:
+        `Made ${made}, with ${plural(restored.templates.length, 'letter')}, ` +
+        `${plural(restored.presetProfiles.profiles.length, 'practice')}, and your letterhead, signature and preferences.\n\n` +
+        'Restoring everything replaces all of these in LetterBank now. Adding letters only leaves everything else as it is.',
+      choices: [
+        { value: 'letters', label: 'Add letters only' },
+        { value: 'all', label: 'Restore everything', primary: true },
+      ],
+    });
+    if (answer === 'letters') addLetters(restored.templates);
+    if (answer !== 'all') return;
+
+    try {
+      const [letterheadUrl, signatureUrl] = await Promise.all([
+        importImageDataUrl(restored.letterhead.url),
+        importImageDataUrl(restored.signature.url),
+      ]);
+      replaceLetters(restored.templates);
+      setPresetProfiles(restored.presetProfiles);
+      setClinician(restored.clinician);
+      setLetterhead({ ...restored.letterhead, url: letterheadUrl });
+      setSignature({ ...restored.signature, url: signatureUrl });
+      setTheme(restored.theme);
+      notify('Backup restored');
+    } catch (err) {
+      notify(`Restore failed: ${err.message}`, 'error');
+    }
   };
 
   // ---- CSV batch -----------------------------------------------------------
@@ -980,8 +1023,8 @@ export function App() {
           onDuplicateTemplate={handleDuplicateTemplate}
           onDeleteTemplate={handleDeleteTemplate}
           onResetTemplates={handleResetTemplates}
-          onExportTemplatesJson={handleExportTemplatesJson}
-          onImportTemplatesJson={handleImportTemplatesJson}
+          onBackup={handleBackup}
+          onRestore={handleRestore}
           unsavedTemplateIds={unsavedTemplateIds}
         />
 

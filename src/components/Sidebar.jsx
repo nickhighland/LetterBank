@@ -72,8 +72,8 @@ export function Sidebar({
   onDuplicateTemplate,
   onDeleteTemplate,
   onResetTemplates,
-  onExportTemplatesJson,
-  onImportTemplatesJson,
+  onBackup,
+  onRestore,
   unsavedTemplateIds = [],
 }) {
   const [query, setQuery] = useState('');
@@ -227,15 +227,19 @@ export function Sidebar({
 
       {/* Footer utilities */}
       <div className="flex items-center justify-between px-3 py-3 border-t shrink-0 text-[11px] border-line text-ink-muted">
-        <button onClick={onExportTemplatesJson} title="Back up all templates to a JSON file" className={utilityClass}>
+        <button
+          onClick={onBackup}
+          title="Save your letters, practices, letterhead and signature to a file. Client details are never included."
+          className={utilityClass}
+        >
           <Download className="w-3.5 h-3.5" />
           Backup
         </button>
 
-        <label title="Restore templates from a JSON file" className={utilityClass}>
+        <label title="Restore letters and settings from a LetterBank backup" className={utilityClass}>
           <Upload className="w-3.5 h-3.5" />
           Restore
-          <input type="file" accept="application/json" onChange={onImportTemplatesJson} className="hidden" />
+          <input type="file" accept="application/json,.json" onChange={onRestore} className="hidden" />
         </label>
 
         <button onClick={onResetTemplates} title="Reset the library to the default clinical templates" className={utilityClass}>
