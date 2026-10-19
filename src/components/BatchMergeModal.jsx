@@ -10,6 +10,8 @@ import {
   Loader2,
 } from 'lucide-react';
 import { parseCsvFile, downloadSampleCsv } from '../utils/csvParser';
+import { findBatchGaps } from '../utils/batch';
+import { formatLabel } from '../utils/variableParser';
 import { Modal, Button, Badge } from './ui';
 
 export function BatchMergeModal({
@@ -17,6 +19,7 @@ export function BatchMergeModal({
   onClose,
   template,
   variables,
+  presets,
   onApplyCsvBatch,
   onBatchExportZip,
   isBatchExporting,
@@ -47,6 +50,10 @@ export function BatchMergeModal({
   const unmapped = parsed
     ? variables.filter((v) => parsed.columnMapping[v] === undefined)
     : [];
+
+  // Rows whose letters would print placeholders such as "[Intake Date]".
+  // Single letters ask before they leave the app; a batch lists them here.
+  const gaps = parsed ? findBatchGaps(parsed.records, variables, presets) : [];
 
   const progressPct = batchProgress.total
     ? (batchProgress.current / batchProgress.total) * 100
@@ -86,7 +93,7 @@ export function BatchMergeModal({
               }
             >
               <FileArchive className="w-3.5 h-3.5" />
-              Export {parsed.records.length} PDFs
+              Export {parsed.records.length} PDFs{gaps.length > 0 ? ' anyway' : ''}
             </Button>
           </>
         ) : null
@@ -195,6 +202,28 @@ export function BatchMergeModal({
                 </div>
                 <p className="text-[11px] text-ink-secondary">
                   They'll fall back to your presets, or show as placeholders.
+                </p>
+              </div>
+            )}
+
+            {gaps.length > 0 && (
+              <div className="p-4 rounded-lg space-y-2.5 bg-warning-soft">
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-warning">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  {gaps.length} of {parsed.records.length} letters have empty fields
+                </div>
+                <ul className="space-y-1 max-h-32 overflow-y-auto">
+                  {gaps.map((row) => (
+                    <li key={row.index} className="text-[12px] text-ink-secondary">
+                      <span className="font-semibold text-ink">{row.label}</span>
+                      {' — '}
+                      {row.missing.map(formatLabel).join(', ')}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[11px] text-ink-secondary">
+                  These print as placeholders such as “[{formatLabel(gaps[0].missing[0])}]”. Add
+                  the values to the CSV, or use Review in Quick Fill to fill them one letter at a time.
                 </p>
               </div>
             )}

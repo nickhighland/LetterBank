@@ -1,4 +1,6 @@
 import { parseBlocks, blocksToHtml } from './letterMarkup';
+import { resolveLetterhead } from './storage';
+import { fillableArea } from '../constants/page';
 
 /**
  * Document Paginator Engine
@@ -198,3 +200,44 @@ export function paginateDocument({
 }
 
 
+
+/**
+ * Paginate a letter from its document settings.
+ *
+ * The preview and batch export used to each build the paginator's arguments
+ * themselves, and batch export left out the date block's real height, so a
+ * clinician who enlarged the date got batch PDFs that broke pages in different
+ * places from the preview. Both now come through here.
+ */
+export function paginateLetter({
+  renderedBody,
+  letterhead: rawLetterhead,
+  signature,
+  clinician,
+  clientName = '',
+}) {
+  const letterhead = resolveLetterhead(rawLetterhead);
+  const { width: fillableWidth, height: fillableHeight } = fillableArea(letterhead);
+
+  return paginateDocument({
+    renderedBody,
+    fillableWidth,
+    fillableHeight,
+    fontSize: letterhead.fontSize,
+    lineHeight: letterhead.lineHeight,
+    fontFamily: letterhead.fontFamily,
+    paragraphSpacing: letterhead.paragraphSpacing,
+    bodyAlignment: letterhead.bodyAlignment,
+    showDate: letterhead.showDate,
+    // Reserve what the date actually occupies, so changing its size or
+    // spacing repaginates instead of silently overflowing.
+    dateBlockHeight:
+      (letterhead.fontSize + letterhead.dateSize) * 1.6 +
+      letterhead.dateSpaceBefore +
+      letterhead.dateSpaceAfter,
+    showContinuationHeader: letterhead.showContinuationHeader,
+    signatureConfig: signature,
+    clinician,
+    clientName,
+  });
+}

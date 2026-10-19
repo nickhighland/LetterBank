@@ -59,8 +59,8 @@ import {
   isDesktop,
 } from './utils/exporter';
 import { exportDocx } from './utils/docxExporter';
-import { paginateDocument } from './utils/documentPaginator';
-import { fillableArea } from './constants/page';
+import { paginateLetter } from './utils/documentPaginator';
+import { mergeRecordValues } from './utils/batch';
 import { useLetterPages } from './hooks/useLetterPages';
 import { useElectronMenu } from './hooks/useElectronMenu';
 import { useUpdater } from './hooks/useUpdater';
@@ -683,7 +683,7 @@ export function App() {
     setCsvRecordIndex(idx);
     setValuesCache((prev) => ({
       ...prev,
-      [activeTemplate.id]: records[idx].values,
+      [activeTemplate.id]: mergeRecordValues(records[idx].values, presets, activeVariables),
     }));
   };
 
@@ -696,26 +696,22 @@ export function App() {
   /**
    * Stages one CSV record into the print portal and waits for React to commit
    * it, so the native PDF renderer captures the right document.
+   *
+   * Takes the record itself. It used to take an index into the records last
+   * loaded with "Review in Quick Fill", while the export named each file from
+   * the rows it was handed — so a second CSV exported the first CSV's letters
+   * under the second CSV's names, and exporting before any review crashed.
    */
   const stageRecord = useCallback(
-    async (index) => {
-      const rowValues = csvRecords[index].values;
+    async (record) => {
+      const rowValues = mergeRecordValues(record.values, presets, activeVariables);
       const raw = renderTemplate(activeTemplate.body, rowValues, fieldTypes);
       const body = signatureOwnsClosing ? stripTrailingClosing(raw) : raw;
 
-      const area = fillableArea(letterhead);
-      const recordPages = paginateDocument({
+      const recordPages = paginateLetter({
         renderedBody: body,
-        fillableWidth: area.width,
-        fillableHeight: area.height,
-        fontSize: letterhead.fontSize,
-        lineHeight: letterhead.lineHeight,
-        fontFamily: letterhead.fontFamily,
-        paragraphSpacing: letterhead.paragraphSpacing,
-        bodyAlignment: letterhead.bodyAlignment,
-        showDate: letterhead.showDate,
-        showContinuationHeader: letterhead.showContinuationHeader,
-        signatureConfig: signature,
+        letterhead,
+        signature,
         clinician,
         clientName: rowValues.client_name || '',
       });
@@ -729,7 +725,8 @@ export function App() {
       });
     },
     [
-      csvRecords,
+      presets,
+      activeVariables,
       activeTemplate,
       letterhead,
       signature,
@@ -913,6 +910,7 @@ export function App() {
         onClose={() => setOpenModal(null)}
         template={activeTemplate}
         variables={activeVariables}
+        presets={presets}
         onApplyCsvBatch={handleApplyCsvBatch}
         onBatchExportZip={handleBatchExportZip}
         isBatchExporting={isBatchExporting}

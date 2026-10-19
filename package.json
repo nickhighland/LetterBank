@@ -13,7 +13,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "ELECTRON_DEV=true electron .",
-    "electron:build": "vite build && electron-builder --mac --arm64"
+    "electron:build": "vite build && electron-builder --mac --arm64",
+    "test": "vitest run"
   },
   "build": {
     "appId": "app.letterbank.letters",
@@ -70,6 +71,7 @@
     "electron-builder": "^25.1.8",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^3.2.6"
   }
 }

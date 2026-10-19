@@ -1,5 +1,4 @@
 import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
 
 /**
  * Export pipeline — 100% local, no network, no rasterisation.
@@ -103,8 +102,10 @@ export async function printStaged() {
 }
 
 /**
- * Batch: caller stages each record in turn via `stageRecord(index)`, which must
- * resolve once that record's pages are committed to #print-root.
+ * Batch: caller stages each record in turn via `stageRecord(record)`, which must
+ * resolve once that record's pages are committed to #print-root. The record is
+ * passed itself, never an index, so the letter and its file name always come
+ * from the same row.
  *
  * Desktop only — the browser cannot produce PDF bytes without a print dialog
  * per document, so the web build offers per-record export instead.
@@ -130,7 +131,7 @@ export async function batchExportZip({
   for (let i = 0; i < total; i++) {
     onProgress?.(i + 1, total, `Rendering letter ${i + 1} of ${total}…`);
 
-    await stageRecord(i);
+    await stageRecord(records[i]);
     await waitForStageReady();
 
     const bytes = await window.electronAPI.renderPdf();
@@ -157,12 +158,8 @@ export async function batchExportZip({
   const blob = await zip.generateAsync({ type: 'blob' });
   const buffer = await blob.arrayBuffer();
 
-  const result = await window.electronAPI.saveZip(zipName, new Uint8Array(buffer));
-  if (!result.saved) {
-    // User cancelled the native dialog — fall back to a normal download so the
-    // work isn't thrown away.
-    saveAs(blob, zipName);
-  }
-
-  return result;
+  // A cancelled Save dialog means "don't save". It used to fall back to a
+  // silent download, which left a ZIP of client letters in Downloads that the
+  // clinician had just declined to keep.
+  return window.electronAPI.saveZip(zipName, new Uint8Array(buffer));
 }
