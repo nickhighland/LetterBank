@@ -70,8 +70,10 @@ function registerPrivacy({ app, ipcMain, clipboard, session, store }) {
     removeBrowserStorage(app.getPath('userData'), app.getPath('crashDumps'));
   }
 
+  // will-quit, not before-quit: it comes after every window has closed, so a
+  // quit the clinician cancels (at the unsaved-changes prompt) tidies nothing.
   let finished = false;
-  app.on('before-quit', (event) => {
+  app.on('will-quit', (event) => {
     if (finished) return;
     event.preventDefault();
 

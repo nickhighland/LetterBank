@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Check, Info, AlertTriangle } from 'lucide-react';
 
 const TONES = {
@@ -15,11 +15,18 @@ const TONES = {
  * register for a clinical tool, and it cost a dependency to do it.
  */
 export function Toast({ toast, onDismiss }) {
+  // Keyed on the toast itself: App re-renders on every keystroke and passes a
+  // new onDismiss each time, which used to restart the timer indefinitely.
+  const dismiss = useRef(onDismiss);
+  dismiss.current = onDismiss;
+
   useEffect(() => {
     if (!toast) return;
-    const timer = setTimeout(onDismiss, toast.tone === 'error' ? 6000 : 3000);
+    // A toast with an action (Undo) stays long enough to reach for it.
+    const delay = toast.action || toast.tone === 'error' ? 6000 : 3000;
+    const timer = setTimeout(() => dismiss.current(), delay);
     return () => clearTimeout(timer);
-  }, [toast, onDismiss]);
+  }, [toast]);
 
   if (!toast) return null;
 
@@ -39,6 +46,19 @@ export function Toast({ toast, onDismiss }) {
           <Icon className="w-3.5 h-3.5" strokeWidth={2.5} />
         </span>
         <span className="text-[13px] font-medium text-ink">{toast.message}</span>
+        {toast.action && (
+          <button
+            type="button"
+            onClick={() => {
+              toast.action.run();
+              dismiss.current();
+            }}
+            className="ml-1 -mr-1 px-2 py-1 rounded-md text-[12px] font-semibold cursor-pointer
+                       text-accent hover:bg-accent-soft transition-colors"
+          >
+            {toast.action.label}
+          </button>
+        )}
       </div>
     </div>
   );

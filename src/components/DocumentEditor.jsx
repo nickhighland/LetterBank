@@ -7,17 +7,12 @@ import { FormatToolbar } from './FormatToolbar';
 import { MarkupHelpModal } from './MarkupHelpModal';
 import { FieldMenu } from './FieldMenu';
 
-const draftFrom = (template) => ({
-  title: template?.title || '',
-  category: template?.category || 'General',
-  subject: template?.subject || '',
-  body: template?.body || '',
-  description: template?.description || '',
-  fields: template?.fields || [],
-});
-
-export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
-  const [draft, setDraft] = useState(() => draftFrom(template));
+/**
+ * The draft lives in App (see utils/templateDraft), not here. When it lived
+ * here, switching to Quick Fill unmounted the editor and threw unsaved edits
+ * away without asking, and the preview never showed them until Save.
+ */
+export function DocumentEditor({ template, draft, isDirty, onChangeDraft, onSaveTemplate, onSaveAsNew, onDiscard }) {
   const bodyRef = useRef(null);
   const [showHelp, setShowHelp] = useState(false);
 
@@ -26,23 +21,13 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
   const [fieldMenu, setFieldMenu] = useState(null);
 
   useEffect(() => {
-    if (!template) return;
-    setDraft(draftFrom(template));
     setFieldMenu(null);
   }, [template?.id]);
 
-  const set = (patch) => setDraft((prev) => ({ ...prev, ...patch }));
+  const set = (patch) => onChangeDraft((prev) => ({ ...prev, ...patch }));
+  const setDraft = onChangeDraft;
 
   const variables = extractVariables(`${draft.subject} ${draft.body}`);
-
-  const isDirty =
-    template &&
-    (draft.title !== (template.title || '') ||
-      draft.category !== (template.category || 'General') ||
-      draft.subject !== (template.subject || '') ||
-      draft.body !== (template.body || '') ||
-      draft.description !== (template.description || '') ||
-      JSON.stringify(draft.fields) !== JSON.stringify(template.fields || []));
 
   /** Insert at the caret, not blindly at the end. */
   const insertVariable = (name, target = 'body') => {
@@ -196,9 +181,10 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
       <div className="px-4 py-3.5 border-t shrink-0 flex items-center gap-2 border-line">
         <Button
           variant="ghost"
-          onClick={() => setDraft(draftFrom(template))}
+          onClick={onDiscard}
           disabled={!isDirty}
-          title="Discard changes"
+          title="Discard unsaved changes"
+          aria-label="Discard unsaved changes"
         >
           <RotateCcw className="w-3.5 h-3.5" />
         </Button>

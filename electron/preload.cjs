@@ -41,6 +41,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Remembered so quitting can clear a copied letter off the clipboard.
   noteCopied: (text) => ipcRenderer.send('clipboard:copied', text),
 
+  // Unsaved Editor changes, so closing the window can offer to save them.
+  setUnsavedDrafts: (count) => ipcRenderer.send('drafts:unsaved', count),
+  onSaveDraftsRequested: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('app:save-drafts', handler);
+    return () => ipcRenderer.removeListener('app:save-drafts', handler);
+  },
+  draftsSaved: (ok) => ipcRenderer.send('drafts:saved', ok),
+
   // Menu accelerators. Each returns an unsubscribe function so React effects
   // can clean up instead of stacking duplicate listeners on every re-render.
   onNewLetter: (cb) => {

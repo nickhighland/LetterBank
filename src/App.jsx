@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
 
 import { Header } from './components/Header';
@@ -33,8 +33,11 @@ import {
   saveTheme,
   loadActiveTemplateId,
   saveActiveTemplateId,
+  normaliseTemplates,
 } from './utils/storage';
 import { onSaveError } from './utils/persist';
+import { draftFrom, isDraftDirty, withDraft, dirtyTemplateIds } from './utils/templateDraft';
+import { useChoiceDialog } from './components/ChoiceDialog';
 import {
   extractVariables,
   renderTemplate,
@@ -123,9 +126,12 @@ export function App() {
   // Used to drive batch export one record at a time through the same renderer.
   const [printOverride, setPrintOverride] = useState(null);
 
-  const notify = useCallback((message, tone = 'success') => {
-    setToast({ message, tone, id: Date.now() });
+  /** A toast; `action` adds a button to it, such as { label: 'Undo', run }. */
+  const notify = useCallback((message, tone = 'success', action = null) => {
+    setToast({ message, tone, action, id: Date.now() });
   }, []);
+
+  const [choiceDialog, ask] = useChoiceDialog();
 
   // A save that fails says so now, instead of the change quietly vanishing on
   // the next launch.
@@ -195,8 +201,77 @@ export function App() {
     }));
   }, []);
 
-  const activeTemplate =
+  const savedTemplate =
     templates.find((t) => t.id === activeTemplateId) || templates[0];
+
+  // ---- Unsaved template edits -----------------------------------------------
+  // By template id, so they survive switching views or letters. The letter
+  // below is the draft whenever there is one: what the preview shows, and what
+  // prints, is what the editor says.
+  const [templateDrafts, setTemplateDrafts] = useState({});
+  const editorDraft = templateDrafts[savedTemplate?.id] || draftFrom(savedTemplate);
+  const draftDirty = isDraftDirty(savedTemplate, templateDrafts[savedTemplate?.id]);
+  const activeTemplate = useMemo(
+    () => withDraft(savedTemplate, templateDrafts[savedTemplate?.id]),
+    [savedTemplate, templateDrafts]
+  );
+  const unsavedTemplateIds = useMemo(
+    () => dirtyTemplateIds(templates, templateDrafts),
+    [templates, templateDrafts]
+  );
+
+  const handleChangeDraft = useCallback(
+    (update) => {
+      const id = savedTemplate?.id;
+      if (!id) return;
+      setTemplateDrafts((prev) => {
+        const current = prev[id] || draftFrom(savedTemplate);
+        return { ...prev, [id]: typeof update === 'function' ? update(current) : update };
+      });
+    },
+    [savedTemplate]
+  );
+
+  const clearDraft = useCallback((id) => {
+    setTemplateDrafts((prev) => {
+      if (!prev[id]) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }, []);
+
+  // Closing the window with unsaved changes asks Save / Don't Save / Cancel
+  // (electron/main.js); Save lands here.
+  const draftState = useRef({ templates, templateDrafts });
+  draftState.current = { templates, templateDrafts };
+
+  useEffect(() => {
+    window.electronAPI?.setUnsavedDrafts?.(unsavedTemplateIds.length);
+  }, [unsavedTemplateIds.length]);
+
+  useEffect(
+    () =>
+      window.electronAPI?.onSaveDraftsRequested?.(async () => {
+        const { templates: current, templateDrafts: drafts } = draftState.current;
+        const updated = current.map((t) => withDraft(t, drafts[t.id]));
+        setTemplates(updated);
+        setTemplateDrafts({});
+        window.electronAPI.draftsSaved(await saveTemplates(updated));
+      }),
+    []
+  );
+
+  // The browser build can only offer the browser's own "Leave site?" prompt.
+  useEffect(() => {
+    if (window.electronAPI || !unsavedTemplateIds.length) return undefined;
+    const warn = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [unsavedTemplateIds.length]);
 
   // The subject this letter prints with: the clinician's own wording for this
   // letter if they changed it in Quick Fill, otherwise the template's.
@@ -457,13 +532,22 @@ export function App() {
   );
 
   const handleResetValues = useCallback(() => {
+    const id = activeTemplate.id;
+    const before = valuesCache[id];
     const empty = {};
     activeVariables.forEach((v) => {
       empty[v] = '';
     });
-    setValuesCache((prev) => ({ ...prev, [activeTemplate.id]: empty }));
-    notify('Cleared all fields', 'info');
-  }, [activeVariables, activeTemplate?.id, notify]);
+    setValuesCache((prev) => ({ ...prev, [id]: empty }));
+    const hadValues = Object.values(before || {}).some((v) => String(v ?? '').trim());
+    notify(
+      'Cleared all fields',
+      'info',
+      hadValues
+        ? { label: 'Undo', run: () => setValuesCache((prev) => ({ ...prev, [id]: before })) }
+        : null
+    );
+  }, [activeVariables, activeTemplate?.id, valuesCache, notify]);
 
   const handleFillSampleData = useCallback(() => {
     const sample = {};
@@ -603,13 +687,30 @@ export function App() {
   // ---- Templates -----------------------------------------------------------
   const handleSaveTemplate = (updated) => {
     setTemplates((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    clearDraft(updated.id);
     notify('Template saved');
   };
 
-  const handleSaveAsNewTemplate = (newTpl) => {
+  const handleSaveAsNewTemplate = (newTpl, fromId) => {
     setTemplates((prev) => [newTpl, ...prev]);
+    // "Save as new" leaves the original as it was saved.
+    if (fromId) clearDraft(fromId);
     setActiveTemplateId(newTpl.id);
     notify(`Created "${newTpl.title}"`);
+  };
+
+  /** Throw away unsaved edits to the open template, after asking. */
+  const handleDiscardDraft = async () => {
+    if (!draftDirty) return;
+    const answer = await ask({
+      title: 'Discard your changes?',
+      message: `Your unsaved changes to “${savedTemplate.title}” will be lost.`,
+      choices: [{ value: 'discard', label: 'Discard changes', danger: true }],
+    });
+    if (answer === 'discard') {
+      clearDraft(savedTemplate.id);
+      notify('Changes discarded', 'info');
+    }
   };
 
   const handleDuplicateTemplate = (tpl) => {
@@ -624,9 +725,14 @@ export function App() {
     notify('Template duplicated');
   };
 
-  const handleDeleteTemplate = (id) => {
+  const handleDeleteTemplate = async (id) => {
     const tpl = templates.find((t) => t.id === id);
-    if (!window.confirm(`Delete "${tpl?.title}"? This cannot be undone.`)) return;
+    const answer = await ask({
+      title: 'Delete this letter?',
+      message: `“${tpl?.title}” will be removed from your library. This cannot be undone.`,
+      choices: [{ value: 'delete', label: 'Delete', danger: true }],
+    });
+    if (answer !== 'delete') return;
 
     const updated = templates.filter((t) => t.id !== id);
     setTemplates(updated);
@@ -640,18 +746,21 @@ export function App() {
     setValuesCache(without);
     setLetterDates(without);
     setLetterSubjects(without);
+    clearDraft(id);
     notify('Template deleted', 'info');
   };
 
-  const handleResetTemplates = () => {
-    if (
-      !window.confirm(
-        'Reset the library to the original clinical defaults? Your custom letters will be removed.'
-      )
-    )
-      return;
+  const handleResetTemplates = async () => {
+    const answer = await ask({
+      title: 'Reset your library?',
+      message:
+        'Your letters go back to the original clinical defaults. Letters you created, and changes you made to the defaults, are removed.',
+      choices: [{ value: 'reset', label: 'Reset library', danger: true }],
+    });
+    if (answer !== 'reset') return;
     const defaults = resetTemplates();
     setTemplates(defaults);
+    setTemplateDrafts({});
     setActiveTemplateId(defaults[0]?.id || '');
     notify('Library reset to defaults', 'info');
   };
@@ -669,25 +778,66 @@ export function App() {
     notify(`Backed up ${templates.length} templates`);
   };
 
-  const handleImportTemplatesJson = (e) => {
+  /**
+   * Restore letters from a backup file. Asks whether to add them to the
+   * library or replace it; it used to replace everything without asking.
+   */
+  const handleImportTemplatesJson = async (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const parsed = JSON.parse(event.target.result);
-        if (!Array.isArray(parsed) || parsed.length === 0) {
-          throw new Error('File did not contain a template list');
-        }
-        setTemplates(parsed);
-        setActiveTemplateId(parsed[0]?.id || '');
-        notify(`Imported ${parsed.length} templates`);
-      } catch (err) {
-        notify(`Import failed: ${err.message}`, 'error');
-      }
-    };
-    reader.readAsText(file);
     e.target.value = '';
+    if (!file) return;
+
+    let imported;
+    try {
+      imported = normaliseTemplates(JSON.parse(await file.text()));
+      if (!imported) throw new Error('That file has no letters in it');
+    } catch (err) {
+      notify(`Restore failed: ${err.message}`, 'error');
+      return;
+    }
+
+    const count = `${imported.length} letter${imported.length === 1 ? '' : 's'}`;
+    const answer = await ask({
+      title: `Restore ${count}?`,
+      message:
+        `Add them to your library, or replace your library with them.\n\n` +
+        `Replacing removes the ${templates.length} letters you have now.`,
+      choices: [
+        { value: 'replace', label: 'Replace library', danger: true },
+        { value: 'add', label: 'Add to library', primary: true },
+      ],
+    });
+    if (!answer) return;
+
+    if (answer === 'replace') {
+      setTemplates(imported);
+      setTemplateDrafts({});
+      setActiveTemplateId(imported[0].id);
+      notify(`Replaced your library with ${count}`);
+      return;
+    }
+
+    // Adding: a letter the library already has word for word is skipped; one
+    // that shares an id with a different letter comes in as a copy with its
+    // own id, so nothing already there is overwritten.
+    const contentOf = (t) => JSON.stringify(draftFrom(t));
+    const ids = new Set(templates.map((t) => t.id));
+    const contents = new Set(templates.map(contentOf));
+    const added = [];
+    imported.forEach((tpl, i) => {
+      if (contents.has(contentOf(tpl))) return;
+      const entry = ids.has(tpl.id) ? { ...tpl, id: `custom-${Date.now()}-${i}`, isCustom: true } : tpl;
+      ids.add(entry.id);
+      contents.add(contentOf(entry));
+      added.push(entry);
+    });
+    if (!added.length) {
+      notify('Every letter in that file is already in your library', 'info');
+      return;
+    }
+    setTemplates((prev) => [...added, ...prev]);
+    setActiveTemplateId(added[0].id);
+    notify(`Added ${added.length} letter${added.length === 1 ? '' : 's'} to your library`);
   };
 
   // ---- CSV batch -----------------------------------------------------------
@@ -832,11 +982,14 @@ export function App() {
           onResetTemplates={handleResetTemplates}
           onExportTemplatesJson={handleExportTemplatesJson}
           onImportTemplatesJson={handleImportTemplatesJson}
+          unsavedTemplateIds={unsavedTemplateIds}
         />
 
         {activeView === 'fill' ? (
           <QuickFillPanel
             template={activeTemplate}
+            hasUnsavedEdits={draftDirty}
+            onOpenEditor={() => setActiveView('editor')}
             variables={activeVariables}
             values={currentValues}
             onChangeValue={handleChangeValue}
@@ -864,9 +1017,13 @@ export function App() {
           />
         ) : (
           <DocumentEditor
-            template={activeTemplate}
+            template={savedTemplate}
+            draft={editorDraft}
+            isDirty={draftDirty}
+            onChangeDraft={handleChangeDraft}
             onSaveTemplate={handleSaveTemplate}
-            onSaveAsNew={handleSaveAsNewTemplate}
+            onSaveAsNew={(tpl) => handleSaveAsNewTemplate(tpl, savedTemplate?.id)}
+            onDiscard={handleDiscardDraft}
           />
         )}
 
@@ -957,6 +1114,8 @@ export function App() {
           });
         }}
       />
+
+      {choiceDialog}
 
       <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>

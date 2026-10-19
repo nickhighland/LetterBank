@@ -74,6 +74,7 @@ export function Sidebar({
   onResetTemplates,
   onExportTemplatesJson,
   onImportTemplatesJson,
+  unsavedTemplateIds = [],
 }) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('All');
@@ -156,6 +157,7 @@ export function Sidebar({
           filtered.map((template) => {
             const Icon = ICON_MAP[template.icon] || FileText;
             const isActive = template.id === activeTemplateId;
+            const isUnsaved = unsavedTemplateIds.includes(template.id);
 
             return (
               <button
@@ -178,11 +180,20 @@ export function Sidebar({
                   </span>
 
                   <div className="flex-1 min-w-0">
-                    <div
-                      className={`text-[13px] font-semibold leading-snug truncate
-                                  ${isActive ? 'text-accent-ink' : 'text-ink'}`}
-                    >
-                      {template.title}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span
+                        className={`text-[13px] font-semibold leading-snug truncate
+                                    ${isActive ? 'text-accent-ink' : 'text-ink'}`}
+                      >
+                        {template.title}
+                      </span>
+                      {isUnsaved && (
+                        <span
+                          title="Unsaved changes in the Editor"
+                          aria-label="Unsaved changes"
+                          className="w-1.5 h-1.5 rounded-full shrink-0 bg-warning"
+                        />
+                      )}
                     </div>
                     <p className="text-[12px] leading-relaxed mt-1 line-clamp-2 text-ink-muted">
                       {template.description || `${template.body.slice(0, 70)}…`}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, RotateCcw, User, ChevronLeft, ChevronRight, Bookmark, CalendarDays, Heading, Lock } from 'lucide-react';
+import { Sparkles, RotateCcw, User, ChevronLeft, ChevronRight, Bookmark, CalendarDays, Heading, Lock, PencilLine } from 'lucide-react';
 import { formatLabel, fieldTypeFor, formatLetterDate, toIsoDate } from '../utils/variableParser';
 import { IconButton, TextInput, Field, Badge } from './ui';
 
@@ -27,6 +27,8 @@ export function QuickFillPanel({
   continuationLine = '',
   onChangeSubject,
   onResetSubject,
+  hasUnsavedEdits = false,
+  onOpenEditor,
 }) {
   const dateShortcut = (varName, daysToAdd) => {
     const d = new Date();
@@ -63,6 +65,21 @@ export function QuickFillPanel({
           <Lock className="w-3 h-3 shrink-0" />
           Client details are never saved. Closing LetterBank erases them.
         </p>
+
+        {hasUnsavedEdits && (
+          <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-[12px] bg-warning-soft text-warning">
+            <span className="flex items-center gap-1.5 min-w-0">
+              <PencilLine className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">Showing unsaved Editor changes</span>
+            </span>
+            <button
+              onClick={onOpenEditor}
+              className="shrink-0 px-1.5 py-0.5 rounded font-semibold cursor-pointer hover:underline"
+            >
+              Open Editor
+            </button>
+          </div>
+        )}
 
         {csvBatchInfo && (
           <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-accent-soft">

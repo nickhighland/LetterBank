@@ -58,8 +58,72 @@ function createWindow() {
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });
+  guardUnsavedDrafts(win);
 
   createMenu();
+}
+
+/**
+ * Unsaved changes in the Editor: ask before the window closes, the way a
+ * document app does. The page reports how many letters have unsaved changes.
+ */
+ipcMain.on('drafts:unsaved', (event, count) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.unsavedDrafts = Number(count) || 0;
+});
+
+/** Ask the page to save every draft; resolves true once they are on disk. */
+function requestDraftSave(win) {
+  return new Promise((resolve) => {
+    const finish = (ok) => {
+      clearTimeout(timer);
+      ipcMain.removeListener('drafts:saved', onSaved);
+      resolve(ok);
+    };
+    const onSaved = (event, ok) => {
+      if (event.sender === win.webContents) finish(Boolean(ok));
+    };
+    const timer = setTimeout(() => finish(false), 10000);
+    ipcMain.on('drafts:saved', onSaved);
+    win.webContents.send('app:save-drafts');
+  });
+}
+
+function guardUnsavedDrafts(win) {
+  let confirmed = false;
+  win.on('close', async (event) => {
+    if (confirmed || !win.unsavedDrafts) return;
+    event.preventDefault();
+
+    const count = win.unsavedDrafts;
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Save', 'Don’t Save', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      message:
+        count === 1
+          ? 'Save your changes to this letter before closing?'
+          : `Save your changes to ${count} letters before closing?`,
+      detail: 'Changes you made in the Editor are lost if you don’t save them.',
+    });
+    if (response === 2) return;
+
+    if (response === 0 && !(await requestDraftSave(win))) {
+      const { response: anyway } = await dialog.showMessageBox(win, {
+        type: 'error',
+        buttons: ['Cancel', 'Close Without Saving'],
+        defaultId: 0,
+        cancelId: 0,
+        message: 'LetterBank could not save your changes.',
+        detail: 'Your letters are still open. Try saving again from the Editor.',
+      });
+      if (anyway !== 1) return;
+    }
+
+    confirmed = true;
+    win.close();
+  });
 }
 
 function createMenu() {
@@ -263,6 +327,9 @@ app.whenReady().then(() => {
   });
 });
 
+// Closing the window quits, on macOS too. Client details live only in the
+// window, and quitting is when everything they may have touched is cleared
+// (see privacy.cjs), so "closed" and "erased" mean the same thing.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });
