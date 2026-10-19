@@ -22,7 +22,13 @@ import {
 import { findBatchGaps } from '../utils/batch';
 import { needsValue } from '../utils/fieldDefs';
 import { formatLabel } from '../utils/variableParser';
-import { Modal, Button } from './ui';
+import { Modal, Button, SegmentedControl } from './ui';
+
+const FORMATS = [
+  { value: 'pdf', label: 'PDF' },
+  { value: 'docx', label: 'Word' },
+  { value: 'both', label: 'Both' },
+];
 
 const SELECT =
   'w-full h-8 px-2 rounded-md border text-[12px] bg-surface-raised border-line text-ink outline-none ' +
@@ -45,6 +51,8 @@ export function BatchMergeModal({
 }) {
   const [parsed, setParsed] = useState(null);
   const [error, setError] = useState('');
+  const [format, setFormat] = useState('pdf');
+  const [withSummary, setWithSummary] = useState(true);
 
   // A CSV is matched to one letter's fields; another letter starts over.
   useEffect(() => {
@@ -101,6 +109,22 @@ export function BatchMergeModal({
 
   const labelOf = (name) => fieldDefs[name]?.label || formatLabel(name);
 
+  const exportBatch = () => {
+    const missing = new Map(gaps.map((row) => [row.index, row.missing.map(labelOf)]));
+    onBatchExportZip(parsed.records, {
+      formats: { pdf: format !== 'docx', docx: format !== 'pdf' },
+      summary: withSummary,
+      missingFor: (index) => missing.get(index) || [],
+    });
+  };
+  const count = parsed?.records.length || 0;
+  const exportLabel =
+    format === 'docx'
+      ? `Export ${count} Word files`
+      : format === 'both'
+        ? `Export ${count} PDFs and Word files`
+        : `Export ${count} PDFs`;
+
   const progressPct = batchProgress.total
     ? (batchProgress.current / batchProgress.total) * 100
     : 0;
@@ -132,7 +156,7 @@ export function BatchMergeModal({
             </Button>
             <Button
               variant="primary"
-              onClick={() => onBatchExportZip(parsed.records)}
+              onClick={exportBatch}
               disabled={!canBatchExport}
               title={
                 canBatchExport
@@ -141,7 +165,8 @@ export function BatchMergeModal({
               }
             >
               <FileArchive className="w-3.5 h-3.5" />
-              Export {parsed.records.length} PDFs{gaps.length > 0 ? ' anyway' : ''}
+              {exportLabel}
+              {gaps.length > 0 ? ' anyway' : ''}
             </Button>
           </>
         ) : null
@@ -317,6 +342,22 @@ export function BatchMergeModal({
                 </p>
               </div>
             )}
+
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border border-line">
+              <div className="flex items-center gap-2.5">
+                <span className="text-[12px] font-semibold text-ink-secondary">Save each letter as</span>
+                <SegmentedControl value={format} onChange={setFormat} options={FORMATS} compact />
+              </div>
+              <label className="flex items-center gap-2 text-[12px] text-ink-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={withSummary}
+                  onChange={(e) => setWithSummary(e.target.checked)}
+                  className="w-3.5 h-3.5 accent-accent"
+                />
+                Include a summary (summary.csv)
+              </label>
+            </div>
 
             {!canBatchExport && (
               <p

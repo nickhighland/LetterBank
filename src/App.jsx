@@ -68,7 +68,7 @@ import {
   buildLetterFilename,
   isDesktop,
 } from './utils/exporter';
-import { exportDocx } from './utils/docxExporter';
+import { exportDocx, buildDocx } from './utils/docxExporter';
 import { paginateLetter } from './utils/documentPaginator';
 import { mergeRecordValues } from './utils/batch';
 import { useLetterPages } from './hooks/useLetterPages';
@@ -1041,22 +1041,20 @@ export function App() {
    * the rows it was handed — so a second CSV exported the first CSV's letters
    * under the second CSV's names, and exporting before any review crashed.
    */
-  const stageRecord = useCallback(
-    async (record) => {
+  /** One CSV record's letter: its values, pages and subject, for PDF and Word alike. */
+  const recordLetter = useCallback(
+    (record) => {
       const rowValues = mergeRecordValues(record.values, presets, allVariables);
       const blocks = renderLetterBlocks(bodySource, rowValues, fieldTypes, fieldLabels, {
         stripClosing: signatureOwnsClosing,
       });
-
-      const recordPages = paginateLetter({ blocks, letterhead, signature });
-
-      flushSync(() => {
-        setPrintOverride({
-          pages: recordPages,
-          clientName: rowValues.client_name || '',
-          subject: renderLetter(subjectSource, rowValues, fieldTypes, fieldLabels).trim(),
-        });
-      });
+      return {
+        rowValues,
+        blocks,
+        pages: paginateLetter({ blocks, letterhead, signature }),
+        clientName: rowValues.client_name || '',
+        subject: renderLetter(subjectSource, rowValues, fieldTypes, fieldLabels).trim(),
+      };
     },
     [
       presets,
@@ -1064,7 +1062,6 @@ export function App() {
       bodySource,
       letterhead,
       signature,
-      clinician,
       signatureOwnsClosing,
       subjectSource,
       fieldTypes,
@@ -1072,16 +1069,60 @@ export function App() {
     ]
   );
 
-  const handleBatchExportZip = async (records) => {
+  const stageRecord = useCallback(
+    async (record) => {
+      const { pages: recordPages, clientName, subject } = recordLetter(record);
+      flushSync(() => {
+        setPrintOverride({ pages: recordPages, clientName, subject });
+      });
+    },
+    [recordLetter]
+  );
+
+  const buildRecordDocx = useCallback(
+    (record) => {
+      const { rowValues, pages: recordPages, clientName, subject } = recordLetter(record);
+      const raw = renderLetter(bodySource, rowValues, fieldTypes, fieldLabels);
+      return buildDocx({
+        renderedBody: signatureOwnsClosing ? stripTrailingClosing(raw) : raw,
+        pageCount: recordPages.length,
+        letterhead,
+        signature,
+        clinician,
+        subject,
+        clientName,
+        letterDate,
+      });
+    },
+    [
+      recordLetter,
+      bodySource,
+      fieldTypes,
+      fieldLabels,
+      signatureOwnsClosing,
+      letterhead,
+      signature,
+      clinician,
+      letterDate,
+    ]
+  );
+
+  const handleBatchExportZip = async (records, { formats, summary, missingFor } = {}) => {
     setIsBatchExporting(true);
     try {
-      await batchExportZip({
+      const result = await batchExportZip({
         records,
         templateTitle: activeTemplate.title,
+        formats,
+        summary,
+        missingFor,
         stageRecord,
+        buildRecordDocx,
         onProgress: (current, total, message) =>
           setBatchProgress({ current, total, message }),
       });
+      // A cancelled Save dialog leaves the batch open to try again.
+      if (!result?.saved) return;
       setOpenModal(null);
       notify(`Exported ${records.length} letters`);
     } catch (err) {
