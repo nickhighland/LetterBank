@@ -207,6 +207,62 @@ export function formatLetterDate(isoValue, formatKey = 'long') {
   return fmt.format(date);
 }
 
+const MONTHS = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+];
+
+function monthIndex(name) {
+  const lower = String(name).toLowerCase().replace(/\.$/, '');
+  return MONTHS.findIndex((m) => m === lower || (lower.length >= 3 && m.startsWith(lower)));
+}
+
+function isoFromParts(y, m, d) {
+  let year = Number(y);
+  if (String(y).length === 2) year += year >= 70 ? 1900 : 2000;
+  const date = new Date(year, Number(m) - 1, Number(d));
+  if (date.getFullYear() !== year || date.getMonth() !== Number(m) - 1 || date.getDate() !== Number(d)) {
+    return null; // 02/31/2026 and the like
+  }
+  return toIsoDate(date);
+}
+
+/**
+ * Turn a date as spreadsheets write it into yyyy-mm-dd: 10/22/2026, 10-22-26,
+ * 2026/10/22, Oct 22, 2026, 22 October 2026. Slashed dates are read
+ * month-first, the US convention. Anything unrecognised is returned unchanged.
+ */
+export function normalizeDate(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return text;
+  let m;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(text))) return isoFromParts(m[1], m[2], m[3]) || text;
+  if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/.exec(text))) return isoFromParts(m[3], m[1], m[2]) || text;
+  if ((m = /^([A-Za-z]+\.?)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/.exec(text))) {
+    const month = monthIndex(m[1]);
+    if (month >= 0) return isoFromParts(m[3], month + 1, m[2]) || text;
+  }
+  if ((m = /^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+\.?),?\s+(\d{4})$/.exec(text))) {
+    const month = monthIndex(m[2]);
+    if (month >= 0) return isoFromParts(m[3], month + 1, m[1]) || text;
+  }
+  return text;
+}
+
+/** "2:30 PM" or "2:30pm" -> "14:30", what a time picker holds. Others unchanged. */
+export function normalizeTime(value) {
+  const text = String(value ?? '').trim();
+  const m = /^(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?$/i.exec(text);
+  if (m) {
+    let h = Number(m[1]) % 12;
+    if (m[3].toLowerCase() === 'p') h += 12;
+    return `${String(h).padStart(2, '0')}:${m[2] || '00'}`;
+  }
+  const h24 = /^(\d{1,2}):(\d{2})$/.exec(text);
+  if (h24 && Number(h24[1]) < 24) return `${h24[1].padStart(2, '0')}:${h24[2]}`;
+  return text;
+}
+
 export function formatDateForDisplay(dateStr) {
   if (!dateStr) return '';
   // Check if it's YYYY-MM-DD

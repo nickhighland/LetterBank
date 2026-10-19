@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Upload,
   Users,
@@ -8,17 +8,31 @@ import {
   ArrowRight,
   Download,
   Loader2,
+  Check,
+  Bookmark,
 } from 'lucide-react';
-import { parseCsvFile, downloadSampleCsv } from '../utils/csvParser';
+import {
+  parseCsvFile,
+  downloadSampleCsv,
+  generateMergedRecords,
+  findNameColumns,
+  describeMapping,
+  readMappedValue,
+} from '../utils/csvParser';
 import { findBatchGaps } from '../utils/batch';
 import { formatLabel } from '../utils/variableParser';
-import { Modal, Button, Badge } from './ui';
+import { Modal, Button } from './ui';
+
+const SELECT =
+  'w-full h-8 px-2 rounded-md border text-[12px] bg-surface-raised border-line text-ink outline-none ' +
+  'focus:border-accent cursor-pointer';
 
 export function BatchMergeModal({
   isOpen,
   onClose,
   template,
   variables,
+  fieldTypes = {},
   presets,
   onApplyCsvBatch,
   onBatchExportZip,
@@ -29,12 +43,18 @@ export function BatchMergeModal({
   const [parsed, setParsed] = useState(null);
   const [error, setError] = useState('');
 
+  // A CSV is matched to one letter's fields; another letter starts over.
+  useEffect(() => {
+    setParsed(null);
+    setError('');
+  }, [template?.id]);
+
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setError('');
     try {
-      const result = await parseCsvFile(file, variables);
+      const result = await parseCsvFile(file, variables, fieldTypes);
       if (!result.records.length) throw new Error('That file had no data rows.');
       setParsed(result);
     } catch (err) {
@@ -44,20 +64,35 @@ export function BatchMergeModal({
     e.target.value = '';
   };
 
-  const mapped = parsed
-    ? variables.filter((v) => parsed.columnMapping[v] !== undefined)
-    : [];
-  const unmapped = parsed
-    ? variables.filter((v) => parsed.columnMapping[v] === undefined)
-    : [];
+  /** Choose which column fills a field; '' leaves it to presets. */
+  const setColumn = (variable, column) =>
+    setParsed((prev) => {
+      const columnMapping = { ...prev.columnMapping, [variable]: column };
+      return {
+        ...prev,
+        columnMapping,
+        records: generateMergedRecords(prev.data, columnMapping, fieldTypes),
+      };
+    });
+
+  const combinedName = parsed ? findNameColumns(parsed.headers) : '';
+  const hasColumn = (v) => Boolean(parsed?.columnMapping[v]);
+  const hasPreset = (v) => String(presets?.[v] ?? '').trim() !== '';
+  const matched = parsed ? variables.filter(hasColumn) : [];
+  const unmatched = parsed ? variables.filter((v) => !hasColumn(v) && !hasPreset(v)) : [];
 
   // Rows whose letters would print placeholders such as "[Intake Date]".
   // Single letters ask before they leave the app; a batch lists them here.
-  const gaps = parsed ? findBatchGaps(parsed.records, variables, presets) : [];
+  const gaps = useMemo(
+    () => (parsed ? findBatchGaps(parsed.records, variables, presets) : []),
+    [parsed, variables, presets]
+  );
 
   const progressPct = batchProgress.total
     ? (batchProgress.current / batchProgress.total) * 100
     : 0;
+
+  const firstRow = parsed?.data?.[0] || {};
 
   return (
     <Modal
@@ -132,7 +167,7 @@ export function BatchMergeModal({
                   Choose a CSV file
                 </span>
                 <span className="text-[11px] text-ink-muted">
-                  One row per client. Column headers map to fields automatically.
+                  One row per client. You can check which column fills each field next.
                 </span>
               </span>
               <input type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileUpload} />
@@ -175,7 +210,7 @@ export function BatchMergeModal({
                   {parsed.records.length} records ready
                 </div>
                 <div className="text-[11px] text-ink-secondary">
-                  {mapped.length} of {variables.length} fields matched to columns
+                  {matched.length} of {variables.length} fields matched to columns
                 </div>
               </div>
               <Button variant="ghost" onClick={() => setParsed(null)}>
@@ -183,28 +218,70 @@ export function BatchMergeModal({
               </Button>
             </div>
 
-            {unmapped.length > 0 && (
-              <div
-                className="p-4 rounded-lg space-y-2.5 bg-warning-soft"
-              >
-                <div
-                  className="flex items-center gap-1.5 text-[12px] font-semibold text-warning"
-                >
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  No column found for these fields
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {unmapped.map((v) => (
-                    <Badge key={v} tone="warning">
-                      {v}
-                    </Badge>
-                  ))}
-                </div>
-                <p className="text-[11px] text-ink-secondary">
-                  They'll fall back to your presets, or show as placeholders.
-                </p>
+            {unmatched.length > 0 && (
+              <div className="flex items-start gap-2 p-3.5 rounded-lg text-[12px] bg-warning-soft text-warning">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
+                <span>
+                  <strong className="font-semibold">No column found for </strong>
+                  {unmatched.map(formatLabel).join(', ')}. Pick a column below, or these print as
+                  placeholders.
+                </span>
               </div>
             )}
+
+            {/* Which column fills each field. Automatic matches are exact
+                names or common aliases only, and every one can be changed. */}
+            <div className="rounded-xl border overflow-hidden border-line">
+              <div className="grid grid-cols-[1fr_1.1fr_1fr] gap-3 px-3 py-2 text-[11px] font-semibold bg-surface-sunken text-ink-secondary">
+                <span>Field</span>
+                <span>CSV column</span>
+                <span>First row</span>
+              </div>
+              <ul className="max-h-60 overflow-y-auto">
+                {variables.map((v) => {
+                  const column = parsed.columnMapping[v] || '';
+                  const sample = readMappedValue(firstRow, column);
+                  return (
+                    <li
+                      key={v}
+                      className="grid grid-cols-[1fr_1.1fr_1fr] gap-3 items-center px-3 py-1.5 border-t border-line-soft"
+                    >
+                      <span className="flex items-center gap-1.5 min-w-0 text-[12px] text-ink">
+                        {column ? (
+                          <Check className="w-3.5 h-3.5 shrink-0 text-success" />
+                        ) : hasPreset(v) ? (
+                          <Bookmark className="w-3.5 h-3.5 shrink-0 text-ink-faint" />
+                        ) : (
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0 text-warning" />
+                        )}
+                        <span className="truncate">{formatLabel(v)}</span>
+                      </span>
+                      <select
+                        aria-label={`Column for ${formatLabel(v)}`}
+                        value={column}
+                        onChange={(e) => setColumn(v, e.target.value)}
+                        className={SELECT}
+                      >
+                        <option value="">
+                          {hasPreset(v) ? 'None — use my preset' : 'None'}
+                        </option>
+                        {parsed.headers.map((h) => (
+                          <option key={h} value={h}>
+                            {h}
+                          </option>
+                        ))}
+                        {combinedName && (
+                          <option value={combinedName}>{describeMapping(combinedName)}</option>
+                        )}
+                      </select>
+                      <span className="truncate text-[12px] text-ink-muted">
+                        {column ? sample || '—' : hasPreset(v) ? presets[v] : '—'}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
 
             {gaps.length > 0 && (
               <div className="p-4 rounded-lg space-y-2.5 bg-warning-soft">
@@ -227,49 +304,6 @@ export function BatchMergeModal({
                 </p>
               </div>
             )}
-
-            {/* Preview table */}
-            <div
-              className="rounded-xl border overflow-hidden border-line"
-            >
-              <div className="overflow-x-auto max-h-56">
-                <table className="w-full text-[12px] border-collapse">
-                  <thead className="sticky top-0">
-                    <tr className="bg-surface-sunken">
-                      {mapped.slice(0, 5).map((v) => (
-                        <th
-                          key={v}
-                          className="text-left font-semibold px-3 py-2.5 whitespace-nowrap text-ink-secondary"
-                        >
-                          {v}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {parsed.records.slice(0, 8).map((rec, i) => (
-                      <tr key={i} className="border-t border-line-soft">
-                        {mapped.slice(0, 5).map((v) => (
-                          <td
-                            key={v}
-                            className="px-3 py-2 truncate max-w-[160px] text-ink-muted"
-                          >
-                            {rec.values[v] || '—'}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {parsed.records.length > 8 && (
-                <div
-                  className="px-2.5 py-1.5 text-[11px] border-t text-ink-faint border-line"
-                >
-                  + {parsed.records.length - 8} more
-                </div>
-              )}
-            </div>
 
             {!canBatchExport && (
               <p

@@ -910,6 +910,7 @@ export function App() {
         onClose={() => setOpenModal(null)}
         template={activeTemplate}
         variables={activeVariables}
+        fieldTypes={fieldTypes}
         presets={presets}
         onApplyCsvBatch={handleApplyCsvBatch}
         onBatchExportZip={handleBatchExportZip}
