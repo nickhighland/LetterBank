@@ -54,14 +54,22 @@ Each letter's **Subject** can be reworded in Quick Fill without touching the
 template. Page 2 onward carries it in the header — "RE: Medical Leave for Jane
 Doe" — set in Document setup as `RE: {{subject}}`.
 
-The body supports
-lightweight formatting — the **?** button in the editor toolbar lists it all:
+The letter is written in a word-processor style editor: bold, italic,
+underline, alignment, lists, indent and page breaks from the toolbar or the
+usual shortcuts (the **?** button lists them). Fields and optional wording
+show as chips. The preview is editable too: click any paragraph on the page to
+change it there. In the Editor that changes the template; in Quick Fill it
+changes that one letter, is never saved, and is erased when LetterBank closes.
+
+Letters are still stored as plain text with lightweight markup, so backups,
+CSV merge and Word export read them as before:
 
 ```
 **bold**   *italic*   __underline__
 - bullet   1. number   > indent
 [center] [right] [justify]
 ---pagebreak---
+[[if telehealth]] … [[else]] … [[end]]
 ```
 
 ## Export
@@ -73,8 +81,8 @@ everything runs locally.
 
 **Word** exports an editable `.docx` with the same letterhead, margins,
 typography, date, signature and page 2 header. Word lays out the text itself,
-so its page breaks can differ slightly from the preview; explicit
-`---pagebreak---` breaks are kept.
+so its page breaks can differ slightly from the preview; page breaks you
+add are kept.
 
 CSV mail merge generates a letter per row; batch ZIP export requires the
 desktop app.

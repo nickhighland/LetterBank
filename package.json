@@ -59,6 +59,10 @@
     ]
   },
   "dependencies": {
+    "@tiptap/core": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/react": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
     "electron-updater": "^6.8.9",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",

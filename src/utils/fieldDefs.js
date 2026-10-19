@@ -133,6 +133,26 @@ export function resolveFieldDefs(names, { text = '', library = [], templateField
   return defs;
 }
 
+/**
+ * A letter's own field list with `def` recorded in it. A definition is kept
+ * when a guess from the name would get the field wrong ("return_to_work"
+ * taken for a Date), and as a copy of a My fields entry, so the letter still
+ * works if that is later deleted. A field the guess gets right is left out.
+ */
+export function withFieldDef(fields = [], def) {
+  const plain =
+    def.type === inferFieldType(def.name) &&
+    def.label === formatLabel(def.name) &&
+    !def.help &&
+    !(def.options || []).length;
+  const known = fields.find((f) => f.name === def.name);
+  if (plain && !known) return fields;
+  const others = fields.filter((f) => f.name !== def.name);
+  const entry = { ...def, defaultValue: known?.defaultValue ?? def.defaultValue ?? '' };
+  delete entry.source;
+  return plain ? others : [...others, entry];
+}
+
 /** name -> type, for renderTemplate and the CSV reader. */
 export function typesOf(defs) {
   const types = {};

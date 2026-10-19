@@ -2,68 +2,58 @@ import React from 'react';
 import { HelpCircle } from 'lucide-react';
 import { Modal, Button } from './ui';
 
+const MOD = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? '⌘' : 'Ctrl+';
+
 /**
- * The formatting cheat sheet.
- *
- * Every row is rendered from the same markup it documents, so the "Result"
- * column cannot drift out of date the way a hand-written screenshot would.
+ * How to write a letter in the editor: keys, fields, optional wording,
+ * pronouns, and editing on the page. Each row is [what to press or type,
+ * what it does].
  */
 const SECTIONS = [
   {
-    title: 'Inline — anywhere in a line',
+    title: 'Formatting',
     rows: [
-      ['**bold text**', <strong key="b">bold text</strong>, 'Bold'],
-      ['*italic text*', <em key="i">italic text</em>, 'Italic'],
-      ['__underlined__', <u key="u">underlined</u>, 'Underline'],
+      [`${MOD}B  ${MOD}I  ${MOD}U`, 'Bold, italic, underline'],
+      [`${MOD}⇧L  ${MOD}⇧E  ${MOD}⇧R  ${MOD}⇧J`, 'Align left, centre, right, justify'],
+      ['Tab  ⇧Tab', 'Indent the paragraph, or take the indent back out'],
+      ['- or 1. then a space', 'Start a bulleted or numbered list'],
+      ['Return', 'New paragraph. Return twice leaves a list.'],
+      ['⇧Return', 'New line in the same paragraph, as in an address'],
+      [`${MOD}Return`, 'Start a new page'],
     ],
   },
   {
-    title: 'Lists — at the start of a line',
+    title: 'Fields',
     rows: [
-      ['- First point', <span key="l1">• First point</span>, 'Bullet list'],
-      ['* First point', <span key="l2">• First point</span>, 'Bullet list (alternative)'],
-      ['1. First step', <span key="l3">1. First step</span>, 'Numbered list'],
+      ['Right-click, or Field', 'Insert a field at the cursor: one already in the letter, one of My fields, or a new one'],
+      ['{{client_name}}', 'Typing a placeholder makes it a field too'],
+      ['Double-click a field', 'Change its label, type, choices or help text'],
     ],
   },
   {
-    title: 'Alignment — at the start of a paragraph',
+    title: 'Optional wording',
     rows: [
-      ['[left] text', <span key="a1">text</span>, 'Align left (the default)'],
-      ['[center] text', <span key="a2">text</span>, 'Centre the paragraph'],
-      ['[right] text', <span key="a3">text</span>, 'Align right'],
-      ['[justify] text', <span key="a4">text</span>, 'Justify both edges'],
+      ['Select, then Optional', 'Prints only when a box is ticked in Quick Fill'],
+      ['[[if telehealth]] … [[end]]', 'The same, typed: prints when Telehealth is ticked'],
+      ['[[if telehealth]] … [[else]] … [[end]]', 'The second part prints when it is not ticked'],
+      ['[[if platform = Zoom]] … [[end]]', 'Prints when a field reads Zoom'],
+      ['[[if not telehealth]] … [[end]]', 'Prints when it is not ticked'],
     ],
   },
   {
-    title: 'Indent — at the start of a line',
+    title: 'Pronouns, set once with the Pronouns field',
     rows: [
-      ['> text', <span key="i1">text</span>, 'Indent one level'],
-      ['>> text', <span key="i2">text</span>, 'Indent two levels (up to four)'],
+      ['{{they}} {{them}} {{their}}', 'she, her, her (or he, him, his; they, them, their)'],
+      ['{{they_are}} {{they_were}} {{they_have}}', 'The verb agrees: she is, she was, she has'],
+      ['{{They}} {{Their}} {{They_are}}', 'Capitalised, to start a sentence'],
     ],
   },
   {
-    title: 'Structure',
+    title: 'On the page',
     rows: [
-      ['(blank line)', <span key="s1">—</span>, 'Starts a new paragraph'],
-      ['---pagebreak---', <span key="s2">—</span>, 'Forces a new page'],
-      ['{{client_name}}', <span key="s3">Alex Morgan</span>, 'Becomes a Quick Fill field'],
-    ],
-  },
-  {
-    title: 'Optional wording — on its own lines, or inside a sentence',
-    rows: [
-      ['[[if telehealth]] … [[end]]', <span key="c1">…</span>, 'Prints only when Telehealth is ticked in Quick Fill'],
-      ['[[if telehealth]] … [[else]] … [[end]]', <span key="c2">one or the other</span>, 'The second part prints when it is not ticked'],
-      ['[[if platform = Zoom]] … [[end]]', <span key="c3">…</span>, 'Prints when a field reads Zoom'],
-      ['[[if not telehealth]] … [[end]]', <span key="c4">…</span>, 'Prints when it is not ticked'],
-    ],
-  },
-  {
-    title: 'Pronouns — set once with the Pronouns field',
-    rows: [
-      ['{{they}} {{them}} {{their}}', <span key="p1">she her her</span>, 'Also {{theirs}} and {{themselves}}'],
-      ['{{they_are}} {{they_were}} {{they_have}}', <span key="p2">she is · she was · she has</span>, 'The verb agrees'],
-      ['{{They}} {{Their}} {{They_are}}', <span key="p3">She · Her · She is</span>, 'Capitalised, to start a sentence'],
+      ['Click a paragraph', 'Edit it right on the letter. Click elsewhere or press Done to finish; Esc puts it back.'],
+      ['In the Editor', 'Changes the letter template, like typing in the Editor pane'],
+      ['In Quick Fill', 'Changes this letter only. The template stays as it is, and the change is erased when LetterBank closes.'],
     ],
   },
 ];
@@ -73,8 +63,8 @@ export function MarkupHelpModal({ isOpen, onClose }) {
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Formatting cheat sheet"
-      subtitle="The body is plain text. These markers style it on the printed letter."
+      title="Writing letters"
+      subtitle="Keys and shortcuts for the editor"
       icon={HelpCircle}
       width="max-w-2xl"
       footer={
@@ -84,33 +74,20 @@ export function MarkupHelpModal({ isOpen, onClose }) {
       }
     >
       <div className="p-6 space-y-6">
-        <p className="text-[12px] text-ink-muted">
-          Select some text and use the toolbar, or type the markers yourself — they do the
-          same thing. Markers never appear on the letter.
-        </p>
-
         {SECTIONS.map(({ title, rows }) => (
           <section key={title} className="space-y-2">
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
-              {title}
-            </h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">{title}</h3>
             <div className="rounded-xl border border-line overflow-hidden">
               <table className="w-full text-[12px] border-collapse">
                 <tbody>
-                  {rows.map(([markup, result, note], i) => (
-                    <tr
-                      key={markup}
-                      className={i > 0 ? 'border-t border-line-soft' : undefined}
-                    >
-                      <td className="px-3 py-2 align-top w-[38%]">
-                        <code className="font-mono text-[11px] text-accent-ink bg-accent-soft rounded px-1.5 py-0.5">
-                          {markup}
+                  {rows.map(([keys, what], i) => (
+                    <tr key={keys} className={i > 0 ? 'border-t border-line-soft' : undefined}>
+                      <td className="px-3 py-2 align-top w-[40%]">
+                        <code className="font-mono text-[11px] text-accent-ink bg-accent-soft rounded px-1.5 py-0.5 whitespace-pre-wrap">
+                          {keys}
                         </code>
                       </td>
-                      <td className="px-3 py-2 align-top w-[26%] font-serif text-ink">
-                        {result}
-                      </td>
-                      <td className="px-3 py-2 align-top text-ink-muted">{note}</td>
+                      <td className="px-3 py-2 align-top text-ink-secondary">{what}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -118,12 +95,6 @@ export function MarkupHelpModal({ isOpen, onClose }) {
             </div>
           </section>
         ))}
-
-        <p className="text-[11px] text-ink-faint">
-          A single underscore is not a formatting marker, so underscores inside merged
-          values — <code className="font-mono">client_name</code> and the like — are left
-          alone.
-        </p>
       </div>
     </Modal>
   );

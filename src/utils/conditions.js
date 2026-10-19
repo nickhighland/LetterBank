@@ -84,6 +84,8 @@ function pieces(line) {
  *               they first appear: condition fields and {{fields}} alike.
  *               Fields only inside left-out wording are not listed.
  *   conditions  the conditions that were consulted
+ *   lines       the wording that applies, line by line
+ *   origins     for each of those lines, the line of `text` it came from
  */
 export function evaluateConditions(text, values = {}) {
   const source = text || '';
@@ -101,7 +103,8 @@ export function evaluateConditions(text, values = {}) {
 
   if (!source.includes('[[')) {
     noteVariables(source);
-    return { text: source, names, conditions: [] };
+    const lines = source.split('\n');
+    return { text: source, names, conditions: [], lines, origins: lines.map((_, i) => i) };
   }
 
   const stack = []; // one frame per open [[if]]: { result, on }
@@ -129,13 +132,14 @@ export function evaluateConditions(text, values = {}) {
   };
 
   const out = [];
+  const origins = [];
   let skipped = false; // something was left out since the last kept line
 
-  for (const line of source.split('\n')) {
+  source.split('\n').forEach((line, index) => {
     if (STANDALONE_RE.test(line)) {
       pieces(line).forEach((p) => p.marker && handle(p.marker));
       skipped = true;
-      continue;
+      return;
     }
 
     let kept = '';
@@ -152,22 +156,26 @@ export function evaluateConditions(text, values = {}) {
 
     if (!anyActive) {
       skipped = true;
-      continue;
+      return;
     }
     // One blank line between paragraphs, however much was left out between them.
     if (kept.trim() === '' && skipped && (out.length === 0 || out[out.length - 1].trim() === '')) {
-      continue;
+      return;
     }
     noteVariables(kept);
     out.push(kept);
+    origins.push(index);
     if (kept.trim() !== '') skipped = false;
-  }
+  });
 
   if (skipped) {
-    while (out.length && out[out.length - 1].trim() === '') out.pop();
+    while (out.length && out[out.length - 1].trim() === '') {
+      out.pop();
+      origins.pop();
+    }
   }
 
-  return { text: out.join('\n'), names, conditions };
+  return { text: out.join('\n'), names, conditions, lines: out, origins };
 }
 
 /**

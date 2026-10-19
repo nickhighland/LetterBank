@@ -31,6 +31,8 @@ export function QuickFillPanel({
   onResetSubject,
   hasUnsavedEdits = false,
   onOpenEditor,
+  bodyOverridden = false,
+  onResetBody,
   fieldDefs = {},
 }) {
   const dateShortcut = (varName, daysToAdd) => {
@@ -80,6 +82,23 @@ export function QuickFillPanel({
               className="shrink-0 px-1.5 py-0.5 rounded font-semibold cursor-pointer hover:underline"
             >
               Open Editor
+            </button>
+          </div>
+        )}
+
+        {bodyOverridden && (
+          <div className="flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-[12px] bg-accent-soft text-accent-ink">
+            <span className="flex items-center gap-1.5 min-w-0">
+              <PencilLine className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate" title="Changed on the page for this letter only. The template is unchanged, and the change is erased when LetterBank closes.">
+                Wording changed for this letter
+              </span>
+            </span>
+            <button
+              onClick={onResetBody}
+              className="shrink-0 px-1.5 py-0.5 rounded font-semibold cursor-pointer hover:underline"
+            >
+              Use template's
             </button>
           </div>
         )}

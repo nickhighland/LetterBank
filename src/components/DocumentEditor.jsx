@@ -1,20 +1,29 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Save, Copy, RotateCcw, Braces } from 'lucide-react';
-import { inferFieldType, formatLabel } from '../utils/variableParser';
-import { allLetterFields, resolveFieldDefs } from '../utils/fieldDefs';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Save, Copy, RotateCcw } from 'lucide-react';
+import { EditorContent } from '@tiptap/react';
+import { formatLabel } from '../utils/variableParser';
+import { allLetterFields, resolveFieldDefs, withFieldDef } from '../utils/fieldDefs';
+import { isPronounToken } from '../utils/pronouns';
 import { FieldSettingsModal } from './FieldSettingsModal';
 import { TYPE_ICONS } from './FieldForm';
 import { TEMPLATE_CATEGORIES } from '../data/defaultTemplates';
 import { Button, TextInput, Field } from './ui';
-import { FormatToolbar } from './FormatToolbar';
 import { MarkupHelpModal } from './MarkupHelpModal';
 import { FieldMenu } from './FieldMenu';
+import { useLetterEditor } from '../editor/useLetterEditor';
+import { LetterToolbar } from '../editor/LetterToolbar';
+import { ChipContext } from '../editor/chips';
+import { insertField as insertFieldInEditor, wrapOptional } from '../editor/commands';
 
 /**
  * The draft lives in App (see utils/templateDraft), not here. When it lived
  * here, switching to Quick Fill unmounted the editor and threw unsaved edits
  * away without asking, and the preview never showed them until Save.
  */
+/** How a placeholder reads in the editor: its field's label, or the pronoun it stands for. */
+const chipText = (name, defs) =>
+  isPronounToken(name) ? name.replace(/_/g, ' ') : defs[name]?.label || formatLabel(name);
+
 export function DocumentEditor({
   template,
   draft,
@@ -26,11 +35,10 @@ export function DocumentEditor({
   fieldLibrary = [],
   onSaveLibraryField,
 }) {
-  const bodyRef = useRef(null);
   const [showHelp, setShowHelp] = useState(false);
 
   const subjectRef = useRef(null);
-  // { x, y, target: 'body' | 'subject' } while the Insert field menu is open.
+  // { x, y, target: 'body' | 'subject', optional? } while the Insert field menu is open.
   const [fieldMenu, setFieldMenu] = useState(null);
   const [editingField, setEditingField] = useState(null);
 
@@ -40,6 +48,13 @@ export function DocumentEditor({
 
   const set = (patch) => onChangeDraft((prev) => ({ ...prev, ...patch }));
   const setDraft = onChangeDraft;
+
+  const editor = useLetterEditor({
+    markup: draft.body,
+    onChange: (body) => set({ body }),
+    onContextMenu: (e) => setFieldMenu({ x: e.clientX, y: e.clientY, target: 'body' }),
+    editorClass: 'lb-pane-editor',
+  });
 
   const letterText = `${draft.body}\n\n${draft.subject}`;
   const variables = allLetterFields(letterText);
@@ -52,34 +67,28 @@ export function DocumentEditor({
   /** Keep a field's definition on the letter (or drop it when a guess would do). */
   const recordField = (def) =>
     setDraft((prev) => {
-      const plain =
-        def.type === inferFieldType(def.name) &&
-        def.label === formatLabel(def.name) &&
-        !def.help &&
-        !(def.options || []).length;
-      const others = prev.fields.filter((f) => f.name !== def.name);
-      const known = prev.fields.find((f) => f.name === def.name);
-      if (plain && !known) return prev;
-      const entry = { ...def, defaultValue: known?.defaultValue ?? def.defaultValue ?? '' };
-      delete entry.source;
-      return { ...prev, fields: plain ? others : [...others, entry] };
+      const fields = withFieldDef(prev.fields, def);
+      return fields === prev.fields ? prev : { ...prev, fields };
     });
 
   /** Insert at the caret, not blindly at the end. */
   const insertVariable = (name, target = 'body') => {
+    if (target === 'body') {
+      insertFieldInEditor(editor, name);
+      return;
+    }
     const token = `{{${name}}}`;
-    const el = target === 'subject' ? subjectRef.current : bodyRef.current;
+    const el = subjectRef.current;
     setDraft((prev) => {
-      const text = prev[target];
-      if (!el) return { ...prev, [target]: `${text}${token}` };
+      const text = prev.subject;
+      if (!el) return { ...prev, subject: `${text}${token}` };
       const start = el.selectionStart ?? text.length;
       const end = el.selectionEnd ?? text.length;
-      const next = text.slice(0, start) + token + text.slice(end);
       requestAnimationFrame(() => {
         el.focus();
         el.setSelectionRange(start + token.length, start + token.length);
       });
-      return { ...prev, [target]: next };
+      return { ...prev, subject: text.slice(0, start) + token + text.slice(end) };
     });
   };
 
@@ -102,25 +111,7 @@ export function DocumentEditor({
   /** Wrap the selection in [[if name]] … [[end]], so it prints only when ticked. */
   const makeOptional = (name) => {
     setFieldMenu(null);
-    const el = bodyRef.current;
-    setDraft((prev) => {
-      const text = prev.body;
-      const start = el?.selectionStart ?? text.length;
-      const end = el?.selectionEnd ?? text.length;
-      const selected = text.slice(start, end);
-      const lineStart = start === 0 || text[start - 1] === '\n';
-      const lineEnd = end === text.length || text[end] === '\n';
-      // Whole lines get markers on lines of their own; part of a line, inline.
-      const wrapped =
-        selected && !(lineStart && lineEnd) && !selected.includes('\n')
-          ? `[[if ${name}]]${selected}[[end]]`
-          : `${lineStart ? '' : '\n'}[[if ${name}]]\n${selected || 'Optional wording.'}\n[[end]]${lineEnd ? '' : '\n'}`;
-      requestAnimationFrame(() => {
-        el?.focus();
-        el?.setSelectionRange(start, start + wrapped.length);
-      });
-      return { ...prev, body: text.slice(0, start) + wrapped + text.slice(end) };
-    });
+    wrapOptional(editor, name);
   };
 
   /** Saved from the field settings dialog. */
@@ -134,6 +125,16 @@ export function DocumentEditor({
     e.preventDefault();
     setFieldMenu({ x: e.clientX, y: e.clientY, target });
   };
+
+  const chips = useMemo(
+    () => ({
+      field: (name) => ({ text: chipText(name, defs), title: `{{${name}}}` }),
+      label: (name) => defs[name]?.label || formatLabel(name),
+      onOpenField: (name) => defs[name] && !isPronounToken(name) && setEditingField(defs[name]),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(defs)]
+  );
 
   return (
     <div
@@ -185,40 +186,22 @@ export function DocumentEditor({
         </Field>
 
         <Field
-          label="Body"
-          hint="Right-click to insert a field. Formatting applies to the selected lines. ---pagebreak--- forces a new page."
-          action={
-            <span className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  setFieldMenu({ x: r.left, y: r.bottom + 4, target: 'body' });
-                }}
-                title="Insert a fillable field at the cursor"
-                className="flex items-center gap-1 h-7 px-2 rounded-md text-[12px] font-medium cursor-pointer
-                           text-ink-secondary hover:bg-surface-hover"
-              >
-                <Braces className="w-3.5 h-3.5" />
-                Field
-              </button>
-              <FormatToolbar
-                targetRef={bodyRef}
-                onChange={(body) => set({ body })}
-                onShowHelp={() => setShowHelp(true)}
-              />
-            </span>
-          }
+          label="Letter"
+          hint="Right-click to insert a field. Return starts a new paragraph; Shift-Return a new line."
         >
-          <TextInput
-            as="textarea"
-            ref={bodyRef}
-            rows={18}
-            value={draft.body}
-            onChange={(e) => set({ body: e.target.value })}
-            onContextMenu={openFieldMenu('body')}
-            className="font-serif !text-[13px] leading-relaxed"
-          />
+          <div className="rounded-lg border border-line bg-surface-base focus-within:border-accent">
+            <div className="sticky top-0 z-10 px-1.5 py-1 border-b rounded-t-lg border-line bg-surface-raised">
+              <LetterToolbar
+                editor={editor}
+                onField={(r) => setFieldMenu({ x: r.left, y: r.bottom + 4, target: 'body' })}
+                onOptional={(r) => setFieldMenu({ x: r.left, y: r.bottom + 4, target: 'body', optional: true })}
+                onHelp={() => setShowHelp(true)}
+              />
+            </div>
+            <ChipContext.Provider value={chips}>
+              <EditorContent editor={editor} className="select-text" />
+            </ChipContext.Provider>
+          </div>
         </Field>
 
         {variables.length > 0 && (
@@ -302,6 +285,7 @@ export function DocumentEditor({
           library={fieldLibrary}
           onInsert={insertField}
           onOptional={fieldMenu.target === 'body' ? makeOptional : undefined}
+          startOptional={Boolean(fieldMenu.optional)}
           onClose={() => setFieldMenu(null)}
         />
       )}

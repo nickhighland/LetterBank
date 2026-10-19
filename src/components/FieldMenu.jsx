@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Plus, Type, ArrowLeft, Split } from 'lucide-react';
 import { BUILT_IN_FIELDS, formatLabel, toFieldName } from '../utils/variableParser';
 import { normaliseFieldDef } from '../utils/fieldDefs';
@@ -26,6 +27,9 @@ const MENU_WIDTH = 288;
  * "New field" form that names a placeholder and picks its type: a Date opens
  * a date picker in Quick Fill, a Dropdown offers its choices, a Yes/No is a
  * checkbox. "Optional wording" wraps the selection in [[if …]] … [[end]].
+ *
+ * Drawn at <body> level: inside the preview's zoomed page, `position: fixed`
+ * would be measured from the page instead of the window.
  */
 export function FieldMenu({
   position,
@@ -35,12 +39,13 @@ export function FieldMenu({
   onInsert,
   onOptional,
   onClose,
+  startOptional = false,
 }) {
   const ref = useRef(null);
   const [query, setQuery] = useState('');
   const [custom, setCustom] = useState(null); // a field definition while the form is open
   const [saveToLibrary, setSaveToLibrary] = useState(true);
-  const [optional, setOptional] = useState(null); // { name } while choosing a condition
+  const [optional, setOptional] = useState(startOptional ? { name: '' } : null); // { name } while choosing a condition
   const [pronounPick, setPronounPick] = useState(null); // { capital } while choosing a pronoun
   const [pos, setPos] = useState(position);
 
@@ -146,10 +151,11 @@ export function FieldMenu({
     </div>
   );
 
-  return (
+  return createPortal(
     <div
       ref={ref}
       role="menu"
+      data-keeps-editor-open=""
       onContextMenu={(e) => e.preventDefault()}
       className="fixed z-50 rounded-xl border shadow-token-md bg-surface-raised border-line select-none"
       style={{ left: pos.x, top: pos.y, width: MENU_WIDTH }}
@@ -359,6 +365,7 @@ export function FieldMenu({
           </div>
         </>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }

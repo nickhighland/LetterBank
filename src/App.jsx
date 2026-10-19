@@ -44,6 +44,8 @@ import {
   stripTrailingClosing,
   startsWithClosing,
   renderContinuationHeader,
+  renderTemplate,
+  formatLabel,
 } from './utils/variableParser';
 import {
   allLetterFields,
@@ -54,7 +56,11 @@ import {
   needsValue,
   renderLetter,
   normaliseFieldLibrary,
+  withFieldDef,
+  letterValues,
 } from './utils/fieldDefs';
+import { renderLetterBlocks, splitBody, replaceBlocks } from './utils/letterBlocks';
+import { markupToPlainText } from './utils/letterMarkup';
 import {
   exportStagedPdf,
   printStaged,
@@ -124,6 +130,8 @@ export function App() {
   const [valuesCache, setValuesCache] = useState({});
   const [letterDates, setLetterDates] = useState({});
   const [letterSubjects, setLetterSubjects] = useState({});
+  // Wording changed on the page in Quick Fill, for this letter only.
+  const [letterBodies, setLetterBodies] = useState({});
 
   // ---- UI state ------------------------------------------------------------
   const [activeView, setActiveView] = useState('fill');
@@ -299,8 +307,25 @@ export function App() {
     ? letterSubjects[activeTemplate.id]
     : activeTemplate?.subject || '';
 
+  // The wording this letter prints with. In Quick Fill that is the wording
+  // the clinician changed on the page for this letter, if they did; the
+  // Editor always shows the template's own, which is what it edits.
+  const bodyOverridden =
+    activeView === 'fill' && Object.hasOwn(letterBodies, activeTemplate?.id || '');
+  const bodySource = bodyOverridden ? letterBodies[activeTemplate.id] : activeTemplate?.body || '';
+
+  const handleResetBody = useCallback(
+    () =>
+      setLetterBodies((prev) => {
+        const next = { ...prev };
+        delete next[activeTemplate?.id];
+        return next;
+      }),
+    [activeTemplate?.id]
+  );
+
   const currentValues = valuesCache[activeTemplate?.id] || EMPTY_VALUES;
-  const letterSource = `${activeTemplate?.body || ''}\n\n${subjectSource}`;
+  const letterSource = `${bodySource}\n\n${subjectSource}`;
 
   /** Every field the letter can ask for, whichever way its options go. */
   const allVariables = useMemo(() => allLetterFields(letterSource), [letterSource]);
@@ -308,11 +333,11 @@ export function App() {
   /** The fields the letter uses as it stands: what Quick Fill shows. */
   const activeVariables = useMemo(() => {
     const names = [
-      ...letterFieldsInUse(activeTemplate?.body || '', currentValues),
+      ...letterFieldsInUse(bodySource, currentValues),
       ...letterFieldsInUse(subjectSource, currentValues),
     ];
     return [...new Set(names)];
-  }, [activeTemplate?.body, subjectSource, currentValues]);
+  }, [bodySource, subjectSource, currentValues]);
 
   /** Each field's label, type, help and choices. See utils/fieldDefs.js. */
   const fieldDefs = useMemo(
@@ -357,9 +382,18 @@ export function App() {
   const signatureOwnsClosing = startsWithClosing(signature.customBlockText);
 
   const renderedBody = useMemo(() => {
-    const rendered = renderLetter(activeTemplate?.body || '', currentValues, fieldTypes, fieldLabels);
+    const rendered = renderLetter(bodySource, currentValues, fieldTypes, fieldLabels);
     return signatureOwnsClosing ? stripTrailingClosing(rendered) : rendered;
-  }, [activeTemplate?.body, currentValues, fieldTypes, fieldLabels, signatureOwnsClosing]);
+  }, [bodySource, currentValues, fieldTypes, fieldLabels, signatureOwnsClosing]);
+
+  /** The same letter as blocks that know where in the template they came from. */
+  const renderedBlocks = useMemo(
+    () =>
+      renderLetterBlocks(bodySource, currentValues, fieldTypes, fieldLabels, {
+        stripClosing: signatureOwnsClosing,
+      }),
+    [bodySource, currentValues, fieldTypes, fieldLabels, signatureOwnsClosing]
+  );
 
   /**
    * Variables with no value. These render as visible placeholders such as
@@ -390,13 +424,73 @@ export function App() {
     [activeTemplate?.id]
   );
 
-  const pages = useLetterPages({
-    renderedBody,
-    letterhead,
-    signature,
-    clinician,
-    clientName: currentValues.client_name || '',
-  });
+  const pages = useLetterPages({ blocks: renderedBlocks, letterhead, signature });
+
+  // ---- Editing on the page --------------------------------------------------
+  /**
+   * A paragraph edited on the page. In the Editor it changes the template's
+   * draft, like typing in the Editor pane. In Quick Fill it changes this
+   * letter's own wording only: the template is left alone, and like the
+   * client's details the change is gone when LetterBank closes.
+   */
+  const commitPageEdit = useCallback(
+    (origin, markup) => {
+      if (activeView === 'editor') {
+        handleChangeDraft((prev) => ({ ...prev, body: replaceBlocks(prev.body, origin, markup) }));
+        return;
+      }
+      const id = activeTemplate?.id;
+      if (!id) return;
+      setLetterBodies((prev) => ({
+        ...prev,
+        [id]: replaceBlocks(Object.hasOwn(prev, id) ? prev[id] : activeTemplate.body, origin, markup),
+      }));
+    },
+    [activeView, activeTemplate, handleChangeDraft]
+  );
+
+  /** Fields on the page show what they print: the value, or "[Label]" while empty. */
+  const pageChips = useMemo(() => {
+    const filled = letterValues(currentValues);
+    return {
+      field: (name) => ({
+        text: renderTemplate(`{{${name}}}`, filled, fieldTypes, fieldLabels),
+        empty: fieldTypes[name] !== 'yesno' && !String(filled[name] ?? '').trim(),
+        title: fieldLabels[name] || formatLabel(name),
+      }),
+      label: (name) => fieldLabels[name] || formatLabel(name),
+    };
+  }, [currentValues, fieldTypes, fieldLabels]);
+
+  const pageFieldMenu = useMemo(
+    () => ({
+      existing: allVariables,
+      defs: fieldDefs,
+      library: fieldLibrary,
+      onInsert: (def, { saveToLibrary = false, pronoun = false } = {}) => {
+        if (pronoun) return;
+        if (saveToLibrary) handleSaveLibraryField(def);
+        if (activeView !== 'editor') return;
+        handleChangeDraft((prev) => {
+          const fields = withFieldDef(prev.fields, def);
+          return fields === prev.fields ? prev : { ...prev, fields };
+        });
+      },
+    }),
+    // handleSaveLibraryField is declared further down and never changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allVariables, fieldDefs, fieldLibrary, activeView, handleChangeDraft]
+  );
+
+  const pageEditing = activeTemplate
+    ? {
+        key: `${activeView}:${activeTemplate.id}`,
+        sourceFor: (origin) => splitBody(bodySource).slice(origin.from, origin.to + 1).join('\n\n'),
+        commit: commitPageEdit,
+        chips: pageChips,
+        fieldMenu: pageFieldMenu,
+      }
+    : null;
 
   // ---- Seed from saved presets only -----------------------------------------
   /**
@@ -610,9 +704,10 @@ export function App() {
    */
   const doCopyText = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(renderedBody.trim());
+      const text = markupToPlainText(renderedBody).trim();
+      await navigator.clipboard.writeText(text);
       // So quitting can clear it if it is still on the clipboard.
-      window.electronAPI?.noteCopied?.(renderedBody.trim());
+      window.electronAPI?.noteCopied?.(text);
       notify('Letter body copied to clipboard');
     } catch (err) {
       console.error('Copy failed', err);
@@ -949,16 +1044,11 @@ export function App() {
   const stageRecord = useCallback(
     async (record) => {
       const rowValues = mergeRecordValues(record.values, presets, allVariables);
-      const raw = renderLetter(activeTemplate.body, rowValues, fieldTypes, fieldLabels);
-      const body = signatureOwnsClosing ? stripTrailingClosing(raw) : raw;
-
-      const recordPages = paginateLetter({
-        renderedBody: body,
-        letterhead,
-        signature,
-        clinician,
-        clientName: rowValues.client_name || '',
+      const blocks = renderLetterBlocks(bodySource, rowValues, fieldTypes, fieldLabels, {
+        stripClosing: signatureOwnsClosing,
       });
+
+      const recordPages = paginateLetter({ blocks, letterhead, signature });
 
       flushSync(() => {
         setPrintOverride({
@@ -971,7 +1061,7 @@ export function App() {
     [
       presets,
       allVariables,
-      activeTemplate,
+      bodySource,
       letterhead,
       signature,
       clinician,
@@ -1073,6 +1163,8 @@ export function App() {
             template={activeTemplate}
             hasUnsavedEdits={draftDirty}
             onOpenEditor={() => setActiveView('editor')}
+            bodyOverridden={bodyOverridden}
+            onResetBody={handleResetBody}
             variables={activeVariables}
             values={currentValues}
             onChangeValue={handleChangeValue}
@@ -1121,6 +1213,7 @@ export function App() {
           clientName={currentValues.client_name || ''}
           subject={renderedSubject}
           letterDate={letterDate}
+          editing={pageEditing}
           onToggleLetterhead={() =>
             setLetterhead((lh) => ({ ...lh, showLetterhead: !lh.showLetterhead }))
           }
@@ -1172,7 +1265,7 @@ export function App() {
         fieldTypes={fieldTypes}
         fieldsFor={(values) => [
           ...new Set([
-            ...letterFieldsInUse(activeTemplate?.body || '', values),
+            ...letterFieldsInUse(bodySource, values),
             ...letterFieldsInUse(subjectSource, values),
           ]),
         ]}
