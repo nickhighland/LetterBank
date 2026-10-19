@@ -24,7 +24,8 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "!electron/__tests__/**"
     ],
     "mac": {
       "category": "public.app-category.medical",
@@ -42,13 +43,18 @@
           ]
         }
       ],
-      "icon": "electron/icon.png"
+      "icon": "electron/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "publish": [
       {
         "provider": "github",
         "owner": "nickhighland",
-        "repo": "LetterBank"
+        "repo": "LetterBank",
+        "releaseType": "release"
       }
     ]
   },
@@ -67,11 +73,11 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.5.4",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.17.0",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
     "vite": "^6.0.7",
-    "vitest": "^3.2.6"
+    "vitest": "^5.0.5"
   }
 }
