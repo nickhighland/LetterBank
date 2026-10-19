@@ -1,31 +1,34 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Save, Copy, RotateCcw } from 'lucide-react';
-import { extractVariables } from '../utils/variableParser';
+import { Save, Copy, RotateCcw, Braces } from 'lucide-react';
+import { extractVariables, fieldTypeMap, inferFieldType, formatLabel } from '../utils/variableParser';
 import { TEMPLATE_CATEGORIES } from '../data/defaultTemplates';
 import { Button, TextInput, Field, Badge } from './ui';
 import { FormatToolbar } from './FormatToolbar';
 import { MarkupHelpModal } from './MarkupHelpModal';
+import { FieldMenu } from './FieldMenu';
+
+const draftFrom = (template) => ({
+  title: template?.title || '',
+  category: template?.category || 'General',
+  subject: template?.subject || '',
+  body: template?.body || '',
+  description: template?.description || '',
+  fields: template?.fields || [],
+});
 
 export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
-  const [draft, setDraft] = useState(() => ({
-    title: template?.title || '',
-    category: template?.category || 'General',
-    subject: template?.subject || '',
-    body: template?.body || '',
-    description: template?.description || '',
-  }));
+  const [draft, setDraft] = useState(() => draftFrom(template));
   const bodyRef = useRef(null);
   const [showHelp, setShowHelp] = useState(false);
 
+  const subjectRef = useRef(null);
+  // { x, y, target: 'body' | 'subject' } while the Insert field menu is open.
+  const [fieldMenu, setFieldMenu] = useState(null);
+
   useEffect(() => {
     if (!template) return;
-    setDraft({
-      title: template.title || '',
-      category: template.category || 'General',
-      subject: template.subject || '',
-      body: template.body || '',
-      description: template.description || '',
-    });
+    setDraft(draftFrom(template));
+    setFieldMenu(null);
   }, [template?.id]);
 
   const set = (patch) => setDraft((prev) => ({ ...prev, ...patch }));
@@ -38,23 +41,49 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
       draft.category !== (template.category || 'General') ||
       draft.subject !== (template.subject || '') ||
       draft.body !== (template.body || '') ||
-      draft.description !== (template.description || ''));
+      draft.description !== (template.description || '') ||
+      JSON.stringify(draft.fields) !== JSON.stringify(template.fields || []));
 
   /** Insert at the caret, not blindly at the end. */
-  const insertVariable = (name) => {
+  const insertVariable = (name, target = 'body') => {
     const token = `{{${name}}}`;
-    const el = bodyRef.current;
+    const el = target === 'subject' ? subjectRef.current : bodyRef.current;
     setDraft((prev) => {
-      if (!el) return { ...prev, body: `${prev.body}${token}` };
-      const start = el.selectionStart ?? prev.body.length;
-      const end = el.selectionEnd ?? prev.body.length;
-      const next = prev.body.slice(0, start) + token + prev.body.slice(end);
+      const text = prev[target];
+      if (!el) return { ...prev, [target]: `${text}${token}` };
+      const start = el.selectionStart ?? text.length;
+      const end = el.selectionEnd ?? text.length;
+      const next = text.slice(0, start) + token + text.slice(end);
       requestAnimationFrame(() => {
         el.focus();
         el.setSelectionRange(start + token.length, start + token.length);
       });
-      return { ...prev, body: next };
+      return { ...prev, [target]: next };
     });
+  };
+
+  /**
+   * Insert from the field menu. A type that differs from what the name alone
+   * would suggest is recorded on the template, so Quick Fill offers the right
+   * picker — "return_to_work" picked as a Date gets a date picker.
+   */
+  const insertField = (name, type) => {
+    const target = fieldMenu?.target || 'body';
+    setFieldMenu(null);
+    setDraft((prev) => {
+      const known = prev.fields.find((f) => f.name === name);
+      if (known ? known.type === type : inferFieldType(name) === type) return prev;
+      const fields = known
+        ? prev.fields.map((f) => (f.name === name ? { ...f, type } : f))
+        : [...prev.fields, { name, label: formatLabel(name), type, defaultValue: '' }];
+      return { ...prev, fields };
+    });
+    insertVariable(name, target);
+  };
+
+  const openFieldMenu = (target) => (e) => {
+    e.preventDefault();
+    setFieldMenu({ x: e.clientX, y: e.clientY, target });
   };
 
   return (
@@ -90,7 +119,12 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
             </TextInput>
           </Field>
           <Field label="Subject">
-            <TextInput value={draft.subject} onChange={(e) => set({ subject: e.target.value })} />
+            <TextInput
+              ref={subjectRef}
+              value={draft.subject}
+              onChange={(e) => set({ subject: e.target.value })}
+              onContextMenu={openFieldMenu('subject')}
+            />
           </Field>
         </div>
 
@@ -103,13 +137,28 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
 
         <Field
           label="Body"
-          hint="Formatting applies to the selected lines. ---pagebreak--- forces a new page."
+          hint="Right-click to insert a field. Formatting applies to the selected lines. ---pagebreak--- forces a new page."
           action={
-            <FormatToolbar
-              targetRef={bodyRef}
-              onChange={(body) => set({ body })}
-              onShowHelp={() => setShowHelp(true)}
-            />
+            <span className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setFieldMenu({ x: r.left, y: r.bottom + 4, target: 'body' });
+                }}
+                title="Insert a fillable field at the cursor"
+                className="flex items-center gap-1 h-7 px-2 rounded-md text-[12px] font-medium cursor-pointer
+                           text-ink-secondary hover:bg-surface-hover"
+              >
+                <Braces className="w-3.5 h-3.5" />
+                Field
+              </button>
+              <FormatToolbar
+                targetRef={bodyRef}
+                onChange={(body) => set({ body })}
+                onShowHelp={() => setShowHelp(true)}
+              />
+            </span>
           }
         >
           <TextInput
@@ -118,6 +167,7 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
             rows={18}
             value={draft.body}
             onChange={(e) => set({ body: e.target.value })}
+            onContextMenu={openFieldMenu('body')}
             className="font-serif !text-[13px] leading-relaxed"
           />
         </Field>
@@ -146,15 +196,7 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
       <div className="px-4 py-3.5 border-t shrink-0 flex items-center gap-2 border-line">
         <Button
           variant="ghost"
-          onClick={() =>
-            setDraft({
-              title: template?.title || '',
-              category: template?.category || 'General',
-              subject: template?.subject || '',
-              body: template?.body || '',
-              description: template?.description || '',
-            })
-          }
+          onClick={() => setDraft(draftFrom(template))}
           disabled={!isDirty}
           title="Discard changes"
         >
@@ -189,6 +231,16 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
       </div>
 
       <MarkupHelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
+
+      {fieldMenu && (
+        <FieldMenu
+          position={fieldMenu}
+          existing={variables}
+          types={fieldTypeMap(draft.fields)}
+          onInsert={insertField}
+          onClose={() => setFieldMenu(null)}
+        />
+      )}
     </div>
   );
 }

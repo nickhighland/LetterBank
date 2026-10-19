@@ -45,6 +45,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveZip: (suggestedName, buffer) =>
     ipcRenderer.invoke('pdf:saveZip', { suggestedName, buffer }),
 
+  // Writes an already-built Word document via a native Save dialog.
+  saveDocx: (suggestedName, buffer) =>
+    ipcRenderer.invoke('docx:save', { suggestedName, buffer }),
+
   // Native print dialog.
   printLetter: () => ipcRenderer.invoke('print:letter'),
 

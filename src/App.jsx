@@ -39,6 +39,8 @@ import {
   saveActiveTemplateId,
   loadLetterDates,
   saveLetterDates,
+  loadLetterSubjects,
+  saveLetterSubjects,
   purgeSeededDefaults,
 } from './utils/storage';
 import {
@@ -46,6 +48,8 @@ import {
   renderTemplate,
   stripTrailingClosing,
   startsWithClosing,
+  fieldTypeMap,
+  renderContinuationHeader,
 } from './utils/variableParser';
 import {
   exportStagedPdf,
@@ -54,6 +58,7 @@ import {
   buildLetterFilename,
   isDesktop,
 } from './utils/exporter';
+import { exportDocx } from './utils/docxExporter';
 import { paginateDocument } from './utils/documentPaginator';
 import { fillableArea } from './constants/page';
 import { useLetterPages } from './hooks/useLetterPages';
@@ -92,6 +97,7 @@ export function App() {
   const [signature, setSignature] = useState(loadSignature);
   const [letterhead, setLetterhead] = useState(loadLetterhead);
   const [letterDates, setLetterDates] = useState(loadLetterDates);
+  const [letterSubjects, setLetterSubjects] = useState(loadLetterSubjects);
   const [theme, setTheme] = useState(loadTheme);
 
   // ---- UI state ------------------------------------------------------------
@@ -166,6 +172,7 @@ export function App() {
   useEffect(() => saveValuesCache(valuesCache), [valuesCache]);
   useEffect(() => saveActiveTemplateId(activeTemplateId), [activeTemplateId]);
   useEffect(() => saveLetterDates(letterDates), [letterDates]);
+  useEffect(() => saveLetterSubjects(letterSubjects), [letterSubjects]);
 
   // ---- Derived -------------------------------------------------------------
   const activeProfile =
@@ -190,24 +197,61 @@ export function App() {
   const activeTemplate =
     templates.find((t) => t.id === activeTemplateId) || templates[0];
 
+  // The subject this letter prints with: the clinician's own wording for this
+  // letter if they changed it in Quick Fill, otherwise the template's.
+  // An empty override is kept: clearing the subject leaves it blank (the page 2
+  // header then falls back to the client's name) rather than snapping back.
+  const subjectOverridden = Object.hasOwn(letterSubjects, activeTemplate?.id || '');
+  const subjectSource = subjectOverridden
+    ? letterSubjects[activeTemplate.id]
+    : activeTemplate?.subject || '';
+
   const activeVariables = useMemo(
-    () =>
-      extractVariables(
-        (activeTemplate?.body || '') + ' ' + (activeTemplate?.subject || '')
-      ),
-    [activeTemplate?.body, activeTemplate?.subject]
+    () => extractVariables((activeTemplate?.body || '') + ' ' + subjectSource),
+    [activeTemplate?.body, subjectSource]
+  );
+
+  /** Declared field types (Date, Time, Long text) from the template. */
+  const fieldTypes = useMemo(
+    () => fieldTypeMap(activeTemplate?.fields),
+    [activeTemplate?.fields]
   );
 
   const currentValues = valuesCache[activeTemplate?.id] || {};
+
+  const renderedSubject = useMemo(
+    () => renderTemplate(subjectSource, currentValues, fieldTypes).trim(),
+    [subjectSource, currentValues, fieldTypes]
+  );
+
+  const continuationLine = renderContinuationHeader(letterhead.continuationText, {
+    subject: renderedSubject,
+    clientName: currentValues.client_name || '',
+  });
+
+  const handleChangeSubject = useCallback(
+    (text) => setLetterSubjects((prev) => ({ ...prev, [activeTemplate?.id]: text })),
+    [activeTemplate?.id]
+  );
+
+  const handleResetSubject = useCallback(
+    () =>
+      setLetterSubjects((prev) => {
+        const next = { ...prev };
+        delete next[activeTemplate?.id];
+        return next;
+      }),
+    [activeTemplate?.id]
+  );
 
   // The signature block owns the sign-off. If it supplies one, drop the body's
   // trailing salutation so letters don't print "Sincerely," above "Warm regards,".
   const signatureOwnsClosing = startsWithClosing(signature.customBlockText);
 
   const renderedBody = useMemo(() => {
-    const rendered = renderTemplate(activeTemplate?.body || '', currentValues);
+    const rendered = renderTemplate(activeTemplate?.body || '', currentValues, fieldTypes);
     return signatureOwnsClosing ? stripTrailingClosing(rendered) : rendered;
-  }, [activeTemplate?.body, currentValues, signatureOwnsClosing]);
+  }, [activeTemplate?.body, currentValues, fieldTypes, signatureOwnsClosing]);
 
   /**
    * Variables with no value. These render as visible placeholders such as
@@ -509,6 +553,50 @@ export function App() {
     [guardComplete, doPrint]
   );
 
+  const doExportWord = useCallback(async () => {
+    if (!pages.length) return;
+    setIsExporting(true);
+    try {
+      const filename = buildLetterFilename(
+        currentValues.client_name,
+        activeTemplate?.title
+      ).replace(/\.pdf$/, '.docx');
+      const result = await exportDocx({
+        filename,
+        renderedBody,
+        pageCount: pages.length,
+        letterhead,
+        signature,
+        clinician,
+        subject: renderedSubject,
+        clientName: currentValues.client_name || '',
+        letterDate,
+      });
+      if (result.saved) notify('Word document saved');
+    } catch (err) {
+      console.error('Word export failed', err);
+      notify(`Word export failed: ${err.message}`, 'error');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [
+    pages.length,
+    renderedBody,
+    currentValues.client_name,
+    activeTemplate?.title,
+    letterhead,
+    signature,
+    clinician,
+    renderedSubject,
+    letterDate,
+    notify,
+  ]);
+
+  const handleExportWord = useCallback(
+    () => guardComplete(doExportWord, 'export this letter'),
+    [guardComplete, doExportWord]
+  );
+
   // ---- Templates -----------------------------------------------------------
   const handleSaveTemplate = (updated) => {
     setTemplates((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
@@ -612,7 +700,7 @@ export function App() {
   const stageRecord = useCallback(
     async (index) => {
       const rowValues = csvRecords[index].values;
-      const raw = renderTemplate(activeTemplate.body, rowValues);
+      const raw = renderTemplate(activeTemplate.body, rowValues, fieldTypes);
       const body = signatureOwnsClosing ? stripTrailingClosing(raw) : raw;
 
       const area = fillableArea(letterhead);
@@ -636,10 +724,20 @@ export function App() {
         setPrintOverride({
           pages: recordPages,
           clientName: rowValues.client_name || '',
+          subject: renderTemplate(subjectSource, rowValues, fieldTypes).trim(),
         });
       });
     },
-    [csvRecords, activeTemplate, letterhead, signature, clinician, signatureOwnsClosing]
+    [
+      csvRecords,
+      activeTemplate,
+      letterhead,
+      signature,
+      clinician,
+      signatureOwnsClosing,
+      subjectSource,
+      fieldTypes,
+    ]
   );
 
   const handleBatchExportZip = async (records) => {
@@ -681,6 +779,7 @@ export function App() {
   const stagedPages = printOverride?.pages || pages;
   const stagedClientName =
     printOverride?.clientName ?? (currentValues.client_name || '');
+  const stagedSubject = printOverride?.subject ?? renderedSubject;
 
   return (
     <div className="h-full flex flex-col bg-surface-base text-ink">
@@ -690,6 +789,7 @@ export function App() {
         onOpenModal={setOpenModal}
         onCopyText={handleCopyText}
         onExportPdf={handleExportPdf}
+        onExportWord={handleExportWord}
         onPrint={handlePrint}
         isExporting={isExporting}
         theme={theme}
@@ -746,6 +846,12 @@ export function App() {
             onChangeLetterDate={handleChangeLetterDate}
             letterhead={letterhead}
             incompleteFields={incompleteFields}
+            fieldTypes={fieldTypes}
+            subjectSource={subjectSource}
+            subjectOverridden={subjectOverridden}
+            continuationLine={continuationLine}
+            onChangeSubject={handleChangeSubject}
+            onResetSubject={handleResetSubject}
           />
         ) : (
           <DocumentEditor
@@ -761,6 +867,7 @@ export function App() {
           signature={signature}
           clinician={clinician}
           clientName={currentValues.client_name || ''}
+          subject={renderedSubject}
           letterDate={letterDate}
           onToggleLetterhead={() =>
             setLetterhead((lh) => ({ ...lh, showLetterhead: !lh.showLetterhead }))
@@ -775,6 +882,7 @@ export function App() {
         signature={signature}
         clinician={clinician}
         clientName={stagedClientName}
+        subject={stagedSubject}
         letterDate={letterDate}
       />
 

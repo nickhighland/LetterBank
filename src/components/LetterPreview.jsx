@@ -23,6 +23,7 @@ export function LetterPreview({
   signature,
   clinician,
   clientName,
+  subject,
   letterDate,
   onToggleLetterhead,
 }) {
@@ -154,6 +155,7 @@ export function LetterPreview({
                 signature={signature}
                 clinician={clinician}
                 clientName={clientName}
+                subject={subject}
                 letterDate={letterDate}
                 showMarginGuides={showMarginGuides}
               />

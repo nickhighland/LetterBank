@@ -1,6 +1,6 @@
 import React from 'react';
-import { Sparkles, RotateCcw, User, ChevronLeft, ChevronRight, Bookmark, CalendarDays } from 'lucide-react';
-import { formatLabel, inferFieldType, formatLetterDate, toIsoDate } from '../utils/variableParser';
+import { Sparkles, RotateCcw, User, ChevronLeft, ChevronRight, Bookmark, CalendarDays, Heading } from 'lucide-react';
+import { formatLabel, fieldTypeFor, formatLetterDate, toIsoDate } from '../utils/variableParser';
 import { IconButton, TextInput, Field, Badge } from './ui';
 
 const CHIP =
@@ -8,6 +8,7 @@ const CHIP =
 
 export function QuickFillPanel({
   variables,
+  fieldTypes = {},
   values,
   onChangeValue,
   onResetValues,
@@ -21,11 +22,16 @@ export function QuickFillPanel({
   onChangeLetterDate,
   letterhead,
   incompleteFields = [],
+  subjectSource = '',
+  subjectOverridden = false,
+  continuationLine = '',
+  onChangeSubject,
+  onResetSubject,
 }) {
   const dateShortcut = (varName, daysToAdd) => {
     const d = new Date();
     d.setDate(d.getDate() + daysToAdd);
-    onChangeValue(varName, d.toISOString().slice(0, 10));
+    onChangeValue(varName, toIsoDate(d));
   };
 
   const incomplete = new Set(incompleteFields);
@@ -129,6 +135,37 @@ export function QuickFillPanel({
           />
         </Field>
 
+        <Field
+          label={
+            <>
+              <Heading className="w-3.5 h-3.5" />
+              Subject
+            </>
+          }
+          hint={
+            letterhead?.showContinuationHeader
+              ? `Page 2 onward reads “${continuationLine}”`
+              : 'Page 2 header is off — turn it on in Document setup.'
+          }
+          action={
+            subjectOverridden && (
+              <button
+                onClick={onResetSubject}
+                title="Go back to the template's subject"
+                className={`${CHIP} bg-surface-sunken text-ink-muted hover:text-ink`}
+              >
+                Reset
+              </button>
+            )
+          }
+        >
+          <TextInput
+            value={subjectSource}
+            onChange={(e) => onChangeSubject(e.target.value)}
+            placeholder="e.g. Medical Leave for {{client_name}}"
+          />
+        </Field>
+
         <div className="h-px bg-line" />
 
         {variables.length === 0 ? (
@@ -141,7 +178,7 @@ export function QuickFillPanel({
         ) : (
           variables.map((varName) => {
             const label = formatLabel(varName);
-            const type = inferFieldType(varName);
+            const type = fieldTypeFor(varName, fieldTypes);
             const val = values[varName] ?? '';
             const hasPreset = presets?.[varName] !== undefined;
             const presetDiffers = hasPreset && val !== presets[varName];
@@ -200,10 +237,10 @@ export function QuickFillPanel({
                   />
                 ) : (
                   <TextInput
-                    type={type === 'date' ? 'date' : 'text'}
+                    type={type === 'date' || type === 'time' ? type : 'text'}
                     value={val}
                     onChange={(e) => onChangeValue(varName, e.target.value)}
-                    placeholder={type === 'date' ? undefined : `Enter ${label.toLowerCase()}…`}
+                    placeholder={type === 'date' || type === 'time' ? undefined : `Enter ${label.toLowerCase()}…`}
                     data-empty-field={isFirstEmpty ? 'true' : undefined}
                     className={isEmpty ? '!border-warning' : ''}
                   />

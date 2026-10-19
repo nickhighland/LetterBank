@@ -308,11 +308,24 @@ body {
 .letter-continuation-header {
   display: flex;
   justify-content: space-between;
+  gap: 16px;
   padding-bottom: 8px;
   margin-bottom: 14px;
   border-bottom: 1px solid #c3ccd8;
   font-size: 10.5pt;
   color: #55606f;
+}
+
+.letter-continuation-header > span:last-child {
+  flex-shrink: 0;
+}
+
+/* One line, always: the paginator reserves a single line for this header. */
+.letter-continuation-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .letter-body-text {

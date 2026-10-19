@@ -2,7 +2,7 @@
 
 Clinical form letters and document generator for mental health practices.
 Drafts, fills, and batch-generates letters on your own letterhead, with native
-PDF export and print.
+PDF export, Word export, and print.
 
 ## Getting started
 
@@ -33,7 +33,17 @@ letterhead or signature cannot be committed by accident. The bundled
 
 ## Writing letters
 
-`{{double_braces}}` become fillable fields in Quick Fill. The body supports
+`{{double_braces}}` become fillable fields in Quick Fill. In the Editor,
+**right-click** the body or subject (or press **Field**) to insert one: pick a
+field already in the letter, a common one, or **Custom field…** with a name and
+a type. Date fields open a date picker in Quick Fill and print as prose
+("October 18, 2026"); Time fields open a time picker.
+
+Each letter's **Subject** can be reworded in Quick Fill without touching the
+template. Page 2 onward carries it in the header — "RE: Medical Leave for Jane
+Doe" — set in Document setup as `RE: {{subject}}`.
+
+The body supports
 lightweight formatting — the **?** button in the editor toolbar lists it all:
 
 ```
@@ -49,6 +59,11 @@ PDF and print both render the same document through Chromium's own print
 engine, so the output is real vector text — selectable, searchable, and sharp
 at any zoom. No rasterisation, and no network calls: fonts are self-hosted and
 everything runs locally.
+
+**Word** exports an editable `.docx` with the same letterhead, margins,
+typography, date, signature and page 2 header. Word lays out the text itself,
+so its page breaks can differ slightly from the preview; explicit
+`---pagebreak---` breaks are kept.
 
 CSV mail merge generates a letter per row; batch ZIP export requires the
 desktop app.
