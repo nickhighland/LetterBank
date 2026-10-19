@@ -155,11 +155,12 @@ export async function batchExportZip({
     .toISOString()
     .slice(0, 10)}.zip`;
 
-  const blob = await zip.generateAsync({ type: 'blob' });
-  const buffer = await blob.arrayBuffer();
+  // Bytes, not a Blob: Chromium can page large blobs out to disk, and this
+  // archive is full of client letters.
+  const buffer = await zip.generateAsync({ type: 'uint8array' });
 
   // A cancelled Save dialog means "don't save". It used to fall back to a
   // silent download, which left a ZIP of client letters in Downloads that the
   // clinician had just declined to keep.
-  return window.electronAPI.saveZip(zipName, new Uint8Array(buffer));
+  return window.electronAPI.saveZip(zipName, buffer);
 }

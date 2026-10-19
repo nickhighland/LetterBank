@@ -24,8 +24,15 @@ identifying is stored in this repository. Add your own on first run:
 | Letterhead artwork, margins, typography | **Letterhead** → Document setup |
 | Signature image and sign-off block | **Signature** |
 
-Everything you enter is kept in your browser's local storage on your machine.
-It is never sent anywhere and never written into this project.
+Settings, templates, letterhead and signature are saved as files in the app's
+data folder (`~/Library/Application Support/LetterBank/LetterBank Data`).
+Images are kept at full size, with no storage limit. Nothing is sent anywhere
+or written into this project.
+
+**Client details are never saved.** What you type into a letter lives only in
+memory and is erased when LetterBank closes. On quit the app also empties its
+browser storage and clears a copied letter from the clipboard, and on launch it
+deletes any client details an older version saved.
 
 `.gitignore` blocks `letterhead*` and `*signature*` image files so a real
 letterhead or signature cannot be committed by accident. The bundled

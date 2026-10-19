@@ -13,9 +13,33 @@ const { contextBridge, ipcRenderer } = require('electron');
  * All PDF work happens in-process via Chromium's print engine — no network,
  * no third-party service, no bundled rasteriser.
  */
+/**
+ * Saved settings, read once before the page's scripts run so the first render
+ * already has them. Client details are never part of this.
+ */
+let snapshot = null;
+const loadSnapshot = () => {
+  if (!snapshot) snapshot = ipcRenderer.sendSync('store:load');
+  return snapshot;
+};
+
 contextBridge.exposeInMainWorld('electronAPI', {
   isElectron: true,
   platform: process.platform,
+
+  // Read by index.html to paint the right theme before React loads.
+  initialTheme: loadSnapshot()?.values?.theme || null,
+
+  store: {
+    snapshot: () => loadSnapshot(),
+    set: (key, value) => ipcRenderer.invoke('store:set', key, value),
+    replaceAll: (values) => ipcRenderer.invoke('store:replaceAll', values),
+    saveAsset: (bytes, type) => ipcRenderer.invoke('store:saveAsset', bytes, type),
+    finishMigration: () => ipcRenderer.invoke('store:finishMigration'),
+  },
+
+  // Remembered so quitting can clear a copied letter off the clipboard.
+  noteCopied: (text) => ipcRenderer.send('clipboard:copied', text),
 
   // Menu accelerators. Each returns an unsubscribe function so React effects
   // can clean up instead of stacking duplicate listeners on every re-render.

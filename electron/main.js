@@ -1,17 +1,24 @@
-import { app, BrowserWindow, Menu, shell, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, Menu, shell, ipcMain, dialog, clipboard, session } from 'electron';
 import fs from 'fs/promises';
 import { createRequire } from 'module';
 
 // main.js is ESM; the updater is CommonJS because electron-updater is.
 const require = createRequire(import.meta.url);
 const { registerUpdater } = require('./updater.cjs');
+const { createStore, registerStoreIpc } = require('./store.cjs');
+const { registerPrivacy } = require('./privacy.cjs');
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const isDev = process.env.ELECTRON_DEV === 'true' || !app.isPackaged;
+// The dev server only when asked for (npm run electron:dev); `electron .`
+// after a build runs the built app.
+const isDev = process.env.ELECTRON_DEV === 'true';
+
+// A separate data folder, for trying the app without touching real settings.
+if (process.env.LETTERBANK_USER_DATA) app.setPath('userData', process.env.LETTERBANK_USER_DATA);
 
 let mainWindow = null;
 
@@ -123,10 +130,11 @@ function createMenu() {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
+        // Reloading erases the letter being written, since client details
+        // are never saved. Keep it to development builds, where it is useful.
+        ...(isDev
+          ? [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }]
+          : []),
         { role: 'resetZoom' },
         { role: 'zoomIn' },
         { role: 'zoomOut' },
@@ -240,6 +248,12 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(() => {
+  const store = createStore(app.getPath('userData'));
+  store.load();
+  store.pruneAssets();
+  registerStoreIpc(ipcMain, store);
+  registerPrivacy({ app, ipcMain, clipboard, session, store });
+
   registerIpcHandlers();
   registerUpdater(() => mainWindow);
   createWindow();

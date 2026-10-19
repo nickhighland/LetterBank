@@ -21,6 +21,7 @@ import {
   DEFAULT_CLINICIAN,
 } from '../utils/storage';
 import { DATE_FORMATS } from '../utils/variableParser';
+import { importImageFile, importImageDataUrl } from '../utils/persist';
 import { fillableArea, pxToInches, inchesToPx } from '../constants/page';
 import { Modal, Button, Field, TextInput, SegmentedControl } from './ui';
 import { resolveSignatureTokens } from './LetterDocument';
@@ -219,6 +220,7 @@ export function SettingsModal({
   onSaveSignature,
   clinician,
   onSaveClinician,
+  onNotify,
 }) {
   // Main settings tab: 'presets' | 'letterhead' | 'signature'
   const [mainTab, setMainTab] = useState(initialTab);
@@ -253,13 +255,24 @@ export function SettingsModal({
   const setPresetField = (key, val) =>
     setCurrentPresets((prev) => ({ ...prev, [key]: val }));
 
+  /**
+   * Images are kept exactly as chosen — no downscaling — and on the desktop
+   * they are written to the data folder straight away, at full size.
+   */
+  const importImage = async (source, apply) => {
+    try {
+      const url =
+        typeof source === 'string' ? await importImageDataUrl(source) : await importImageFile(source);
+      if (url) apply(url);
+    } catch (err) {
+      onNotify?.(`Couldn't use that image: ${err?.message || err}`, 'error');
+    }
+  };
+
   const handleLetterheadUpload = (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => ev.target?.result && setLh({ url: ev.target.result });
-    reader.readAsDataURL(file);
     e.target.value = '';
+    if (file) importImage(file, (url) => setLh({ url }));
   };
 
   const addCustomPreset = () => {
@@ -905,19 +918,15 @@ export function SettingsModal({
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (!file) return;
-                          const reader = new FileReader();
-                          reader.onload = (ev) =>
-                            ev.target?.result && setSigField({ url: ev.target.result });
-                          reader.readAsDataURL(file);
                           e.target.value = '';
+                          if (file) importImage(file, (url) => setSigField({ url }));
                         }}
                       />
                     </label>
                   </Field>
 
                   <Field label="Or draw your signature">
-                    <SignaturePad onCommit={(url) => setSigField({ url })} />
+                    <SignaturePad onCommit={(dataUrl) => importImage(dataUrl, (url) => setSigField({ url }))} />
                   </Field>
                 </div>
 

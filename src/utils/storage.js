@@ -1,50 +1,38 @@
 import { DEFAULT_TEMPLATES } from '../data/defaultTemplates';
-
-const STORAGE_KEYS = {
-  TEMPLATES: 'letterbank_templates_v2',
-  PRESETS: 'letterbank_presets_v2',
-  PRESET_PROFILES: 'letterbank_preset_profiles_v1',
-  CLINICIAN: 'letterbank_clinician_v2',
-  SIGNATURE: 'letterbank_signature_v2',
-  LETTERHEAD: 'letterbank_letterhead_v2',
-  THEME: 'letterbank_theme_v2',
-  ACTIVE_TEMPLATE_ID: 'letterbank_active_template_id_v2',
-  VALUES_CACHE: 'letterbank_values_cache_v2',
-  LETTER_DATES: 'letterbank_letter_dates_v2',
-  LETTER_SUBJECTS: 'letterbank_letter_subjects_v1',
-  SEED_PURGE: 'letterbank_seed_purge_v1',
-};
+import {
+  readSetting,
+  saveSetting,
+  hasFileStore,
+  isMigrated,
+  finishMigration,
+} from './persist';
 
 /**
- * Carry settings across the CareVault -> LetterBank rename.
- *
- * The storage keys are part of the brand, so they were renamed too. Without
- * this, the rename would silently look like a factory reset: templates,
- * presets, signature and letterhead all still in the browser under the old
- * keys and never read again. Copies only when the new key is absent, so it
- * cannot clobber newer data, and runs once.
+ * Client details that older versions kept in localStorage: the values typed
+ * into every letter, per-letter dates and subjects. LetterBank now keeps no
+ * client information once it closes, so these are deleted on first launch and
+ * never written again.
  */
-function migrateLegacyKeys() {
+const RETIRED_CLIENT_KEYS = [
+  'values_cache_v2',
+  'letter_dates_v2',
+  'letter_subjects_v1',
+  'seed_purge_v1',
+  'migrated_v1',
+];
+
+function deleteRetiredClientData() {
   try {
-    if (localStorage.getItem('letterbank_migrated_v1')) return;
-    let moved = 0;
-    Object.values(STORAGE_KEYS).forEach((key) => {
-      const legacy = key.replace(/^letterbank_/, 'carevault_');
-      if (legacy === key) return;
-      const old = localStorage.getItem(legacy);
-      if (old !== null && localStorage.getItem(key) === null) {
-        localStorage.setItem(key, old);
-        moved += 1;
-      }
+    RETIRED_CLIENT_KEYS.forEach((key) => {
+      localStorage.removeItem(`letterbank_${key}`);
+      localStorage.removeItem(`carevault_${key}`);
     });
-    localStorage.setItem('letterbank_migrated_v1', String(Date.now()));
-    if (moved) console.info(`LetterBank: carried over ${moved} saved settings.`);
-  } catch (e) {
-    console.error('Error migrating legacy storage keys', e);
-  }
+  } catch {}
 }
 
-migrateLegacyKeys();
+// Once the desktop app has moved its settings out of localStorage it never
+// touches localStorage again, so Chromium has nothing to recreate on disk.
+if (!hasFileStore() || !isMigrated()) deleteRetiredClientData();
 
 export const DEFAULT_PRESETS = {
   practice_name: "",
@@ -170,113 +158,61 @@ function normaliseProfiles(raw) {
  * profile so an existing install keeps its practice details.
  */
 export function loadPresetProfiles() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.PRESET_PROFILES);
-    if (raw) return normaliseProfiles(JSON.parse(raw));
+  const stored = readSetting('presetProfiles');
+  if (stored) return normaliseProfiles(stored);
 
-    const legacy = localStorage.getItem(STORAGE_KEYS.PRESETS);
-    if (legacy) {
-      const values = { ...DEFAULT_PRESETS, ...JSON.parse(legacy) };
-      const name = values.practice_name?.trim() || 'My practice';
-      return normaliseProfiles({ profiles: [makeProfile(name, values)] });
-    }
-  } catch (e) {
-    console.error('Error loading practice profiles', e);
+  const legacy = readSetting('presets');
+  if (legacy && typeof legacy === 'object') {
+    const values = { ...DEFAULT_PRESETS, ...legacy };
+    const name = values.practice_name?.trim() || 'My practice';
+    return normaliseProfiles({ profiles: [makeProfile(name, values)] });
   }
   return normaliseProfiles(null);
 }
 
-export function savePresetProfiles(state) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.PRESET_PROFILES, JSON.stringify(state));
-  } catch (e) {
-    console.error('Error saving practice profiles', e);
-  }
-}
+export const savePresetProfiles = (state) => saveSetting('presetProfiles', state);
 
-export function loadPresets() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.PRESETS);
-    if (raw) return { ...DEFAULT_PRESETS, ...JSON.parse(raw) };
-  } catch (e) {
-    console.error('Error loading presets', e);
-  }
-  return DEFAULT_PRESETS;
-}
-
-export function savePresets(presets) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.PRESETS, JSON.stringify(presets));
-  } catch (e) {
-    console.error('Error saving presets', e);
-  }
+/**
+ * The saved library plus any default template added since it was saved.
+ * Templates without an id or a body are dropped, so one damaged entry cannot
+ * take the whole app down.
+ */
+export function normaliseTemplates(list) {
+  if (!Array.isArray(list)) return null;
+  const valid = list.filter(
+    (t) => t && typeof t === 'object' && typeof t.id === 'string' && typeof t.body === 'string'
+  );
+  return valid.length ? valid : null;
 }
 
 export function loadTemplates() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const existingIds = new Set(parsed.map((t) => t.id));
-        const newDefaults = DEFAULT_TEMPLATES.filter((t) => !existingIds.has(t.id));
-        return [...parsed, ...newDefaults];
-      }
-    }
-  } catch (e) {
-    console.error('Error loading templates from localStorage', e);
-  }
-  return DEFAULT_TEMPLATES;
+  const parsed = normaliseTemplates(readSetting('templates'));
+  if (!parsed) return DEFAULT_TEMPLATES;
+  const existingIds = new Set(parsed.map((t) => t.id));
+  const newDefaults = DEFAULT_TEMPLATES.filter((t) => !existingIds.has(t.id));
+  return [...parsed, ...newDefaults];
 }
 
-export function saveTemplates(templates) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
-  } catch (e) {
-    console.error('Error saving templates to localStorage', e);
-  }
-}
+export const saveTemplates = (templates) => saveSetting('templates', templates);
 
 export function resetTemplates() {
-  localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(DEFAULT_TEMPLATES));
+  saveTemplates(DEFAULT_TEMPLATES);
   return DEFAULT_TEMPLATES;
 }
 
 export function loadClinician() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.CLINICIAN);
-    if (raw) return { ...DEFAULT_CLINICIAN, ...JSON.parse(raw) };
-  } catch (e) {
-    console.error('Error loading clinician data', e);
-  }
-  return DEFAULT_CLINICIAN;
+  const stored = readSetting('clinician');
+  return stored && typeof stored === 'object' ? { ...DEFAULT_CLINICIAN, ...stored } : DEFAULT_CLINICIAN;
 }
 
-export function saveClinician(clinician) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.CLINICIAN, JSON.stringify(clinician));
-  } catch (e) {
-    console.error('Error saving clinician data', e);
-  }
-}
+export const saveClinician = (clinician) => saveSetting('clinician', clinician);
 
 export function loadSignature() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.SIGNATURE);
-    if (raw) return { ...DEFAULT_SIGNATURE, ...JSON.parse(raw) };
-  } catch (e) {
-    console.error('Error loading signature data', e);
-  }
-  return DEFAULT_SIGNATURE;
+  const stored = readSetting('signature');
+  return stored && typeof stored === 'object' ? { ...DEFAULT_SIGNATURE, ...stored } : DEFAULT_SIGNATURE;
 }
 
-export function saveSignature(sig) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.SIGNATURE, JSON.stringify(sig));
-  } catch (e) {
-    console.error('Error saving signature data', e);
-  }
-}
+export const saveSignature = (sig) => saveSetting('signature', sig);
 
 /**
  * Fill in any missing letterhead field from the defaults.
@@ -298,168 +234,55 @@ export function resolveLetterhead(letterhead) {
 const LEGACY_CONTINUATION_TEXT = 'Re: {{client_name}}';
 
 export function loadLetterhead() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.LETTERHEAD);
-    if (raw) {
-      const stored = JSON.parse(raw);
-      if (stored.continuationText === LEGACY_CONTINUATION_TEXT) {
-        stored.continuationText = DEFAULT_LETTERHEAD.continuationText;
-      }
-      return { ...DEFAULT_LETTERHEAD, ...stored };
-    }
-  } catch (e) {
-    console.error('Error loading letterhead settings', e);
+  const stored = readSetting('letterhead');
+  if (!stored || typeof stored !== 'object') return DEFAULT_LETTERHEAD;
+  const next = { ...stored };
+  if (next.continuationText === LEGACY_CONTINUATION_TEXT) {
+    next.continuationText = DEFAULT_LETTERHEAD.continuationText;
   }
-  return DEFAULT_LETTERHEAD;
+  return { ...DEFAULT_LETTERHEAD, ...next };
 }
 
-export function saveLetterhead(lh) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.LETTERHEAD, JSON.stringify(lh));
-  } catch (e) {
-    console.error('Error saving letterhead settings', e);
-  }
-}
+export const saveLetterhead = (lh) => saveSetting('letterhead', lh);
 
 export function loadTheme() {
-  try {
-    return localStorage.getItem(STORAGE_KEYS.THEME) || 'system'; // Default to Day/Light Mode!
-  } catch (e) {
-    return 'light';
-  }
+  return readSetting('theme') || 'system';
 }
 
-export function saveTheme(theme) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.THEME, theme);
-  } catch (e) {
-    console.error('Error saving theme', e);
-  }
-}
+export const saveTheme = (theme) => saveSetting('theme', theme);
 
 export function loadActiveTemplateId() {
-  try {
-    return localStorage.getItem(STORAGE_KEYS.ACTIVE_TEMPLATE_ID) || '';
-  } catch (e) {
-    return '';
-  }
+  return readSetting('activeTemplateId') || '';
 }
 
 export function saveActiveTemplateId(id) {
-  try {
-    if (id) localStorage.setItem(STORAGE_KEYS.ACTIVE_TEMPLATE_ID, id);
-  } catch (e) {
-    console.error('Error saving active template id', e);
-  }
+  if (id) saveSetting('activeTemplateId', id);
 }
 
 /**
- * Per-letter date overrides, keyed by template id.
- *
- * Kept out of the values cache because a CSV merge replaces a letter's values
- * wholesale, which would wipe a date the clinician had set by hand. An absent
- * entry means "use today".
+ * Carry an existing install's settings from localStorage to the data folder,
+ * once. localStorage is emptied only after every setting has reached the disk;
+ * if anything fails, the next launch tries again from the same data.
  */
-export function loadLetterDates() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.LETTER_DATES);
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
+async function migrateToFileStore() {
+  const settings = {
+    templates: loadTemplates(),
+    presetProfiles: loadPresetProfiles(),
+    clinician: loadClinician(),
+    signature: loadSignature(),
+    letterhead: loadLetterhead(),
+    theme: loadTheme(),
+    activeTemplateId: loadActiveTemplateId(),
+  };
+  const results = await Promise.all(
+    Object.entries(settings).map(([key, value]) => saveSetting(key, value))
+  );
+  if (results.every(Boolean)) await finishMigration();
 }
 
-export function saveLetterDates(dates) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.LETTER_DATES, JSON.stringify(dates));
-  } catch (e) {
-    console.error('Error saving letter dates', e);
-  }
-}
-
-/**
- * Per-letter subject overrides, keyed by template id. Same reasoning as the
- * letter dates: a CSV merge replaces the values cache wholesale. An absent or
- * empty entry means "use the template's subject".
- */
-export function loadLetterSubjects() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.LETTER_SUBJECTS);
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
-}
-
-export function saveLetterSubjects(subjects) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.LETTER_SUBJECTS, JSON.stringify(subjects));
-  } catch (e) {
-    console.error('Error saving letter subjects', e);
-  }
-}
-
-/**
- * One-time cleanup of values that earlier builds auto-seeded from the
- * templates' own `defaultValue` entries.
- *
- * Removing the seeding code stopped new letters being pre-filled, but it could
- * not touch what had already been written to localStorage — an existing
- * install still opened the intake letter reading "Dear Alex Morgan," with a
- * fabricated date of birth on other letters. This clears those on first run.
- *
- * A value is only removed when it exactly matches the template default AND no
- * preset covers that field (with a preset present, the old code seeded from
- * the preset, so the value is the clinician's own). Anything typed by hand is
- * left alone. Where the two are indistinguishable, clearing is the safe
- * direction: an empty field is flagged before export, a wrong name is not.
- *
- * Returns the number of values removed.
- */
-export function purgeSeededDefaults(templates, presets) {
-  try {
-    if (localStorage.getItem(STORAGE_KEYS.SEED_PURGE)) return 0;
-
-    const cache = loadValuesCache();
-    let removed = 0;
-
-    templates.forEach((tpl) => {
-      const values = cache[tpl.id];
-      if (!values || !tpl.fields) return;
-
-      tpl.fields.forEach((field) => {
-        const seeded = field.defaultValue;
-        if (!seeded) return;
-        if (presets?.[field.name] !== undefined) return; // came from a preset
-        if (values[field.name] === seeded) {
-          delete values[field.name];
-          removed += 1;
-        }
-      });
-    });
-
-    if (removed > 0) saveValuesCache(cache);
-    localStorage.setItem(STORAGE_KEYS.SEED_PURGE, String(Date.now()));
-    return removed;
-  } catch (e) {
-    console.error('Error purging seeded defaults', e);
-    return 0;
-  }
-}
-
-export function loadValuesCache() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.VALUES_CACHE);
-    return raw ? JSON.parse(raw) : {};
-  } catch (e) {
-    return {};
-  }
-}
-
-export function saveValuesCache(cache) {
-  try {
-    localStorage.setItem(STORAGE_KEYS.VALUES_CACHE, JSON.stringify(cache));
-  } catch (e) {
-    console.error('Error saving values cache', e);
-  }
+if (hasFileStore() && !isMigrated()) {
+  // After the module graph settles, so nothing else is mid-import.
+  setTimeout(() => {
+    migrateToFileStore().catch((err) => console.error('LetterBank: migration failed', err));
+  }, 0);
 }

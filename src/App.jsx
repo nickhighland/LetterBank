@@ -19,8 +19,6 @@ import {
   loadTemplates,
   saveTemplates,
   resetTemplates,
-  loadPresets,
-  savePresets,
   loadPresetProfiles,
   savePresetProfiles,
   makeProfile,
@@ -33,16 +31,10 @@ import {
   saveLetterhead,
   loadTheme,
   saveTheme,
-  loadValuesCache,
-  saveValuesCache,
   loadActiveTemplateId,
   saveActiveTemplateId,
-  loadLetterDates,
-  saveLetterDates,
-  loadLetterSubjects,
-  saveLetterSubjects,
-  purgeSeededDefaults,
 } from './utils/storage';
+import { onSaveError } from './utils/persist';
 import {
   extractVariables,
   renderTemplate,
@@ -78,6 +70,17 @@ import { useUpdater } from './hooks/useUpdater';
  * even once the crash was gone.
  */
 const SETTINGS_TABS = ['presets', 'letterhead', 'signature'];
+
+/** How a failed save is described: "Couldn't save your letterhead". */
+const SAVE_LABELS = {
+  templates: 'your letter templates',
+  presetProfiles: 'your practice details',
+  clinician: 'your credentials',
+  signature: 'your signature',
+  letterhead: 'your letterhead',
+  theme: 'the theme',
+  activeTemplateId: 'the open letter',
+};
 const SETTINGS_MODALS = ['settings', ...SETTINGS_TABS];
 
 export function App() {
@@ -91,14 +94,17 @@ export function App() {
   // Practice profiles. `presets` stays a flat key->value object for everything
   // downstream; only its source changes — it is now the active profile's values.
   const [presetProfiles, setPresetProfiles] = useState(loadPresetProfiles);
-  const [seedPurgeCount] = useState(() => purgeSeededDefaults(loadTemplates(), loadPresets()));
-  const [valuesCache, setValuesCache] = useState(loadValuesCache);
   const [clinician, setClinician] = useState(loadClinician);
   const [signature, setSignature] = useState(loadSignature);
   const [letterhead, setLetterhead] = useState(loadLetterhead);
-  const [letterDates, setLetterDates] = useState(loadLetterDates);
-  const [letterSubjects, setLetterSubjects] = useState(loadLetterSubjects);
   const [theme, setTheme] = useState(loadTheme);
+
+  // ---- Client details: memory only ------------------------------------------
+  // What is typed into each letter, and each letter's own date and subject.
+  // Never written anywhere, so closing LetterBank erases them for good.
+  const [valuesCache, setValuesCache] = useState({});
+  const [letterDates, setLetterDates] = useState({});
+  const [letterSubjects, setLetterSubjects] = useState({});
 
   // ---- UI state ------------------------------------------------------------
   const [activeView, setActiveView] = useState('fill');
@@ -121,22 +127,19 @@ export function App() {
     setToast({ message, tone, id: Date.now() });
   }, []);
 
-  // Tell the clinician when the one-time cleanup removed pre-filled sample data,
-  // so a suddenly-empty field is explained rather than alarming.
-  useEffect(() => {
-    if (seedPurgeCount > 0) {
-      notify(
-        `Cleared ${seedPurgeCount} pre-filled sample value${
-          seedPurgeCount === 1 ? '' : 's'
-        } — letters now start blank`,
-        'info'
-      );
-    }
-  }, [seedPurgeCount, notify]);
+  // A save that fails says so now, instead of the change quietly vanishing on
+  // the next launch.
+  useEffect(
+    () =>
+      onSaveError((key, err) =>
+        notify(`Couldn't save ${SAVE_LABELS[key] || 'your settings'}: ${err?.message || err}`, 'error')
+      ),
+    [notify]
+  );
 
   // ---- Theme ---------------------------------------------------------------
   useEffect(() => {
-    saveTheme(theme);
+    void saveTheme(theme);
 
     const applyTheme = () => {
       let resolved = theme;
@@ -164,15 +167,13 @@ export function App() {
   }, [theme]);
 
   // ---- Persistence ---------------------------------------------------------
-  useEffect(() => saveTemplates(templates), [templates]);
-  useEffect(() => savePresetProfiles(presetProfiles), [presetProfiles]);
-  useEffect(() => saveClinician(clinician), [clinician]);
-  useEffect(() => saveSignature(signature), [signature]);
-  useEffect(() => saveLetterhead(letterhead), [letterhead]);
-  useEffect(() => saveValuesCache(valuesCache), [valuesCache]);
-  useEffect(() => saveActiveTemplateId(activeTemplateId), [activeTemplateId]);
-  useEffect(() => saveLetterDates(letterDates), [letterDates]);
-  useEffect(() => saveLetterSubjects(letterSubjects), [letterSubjects]);
+  // Settings only. Client details above are deliberately absent.
+  useEffect(() => void saveTemplates(templates), [templates]);
+  useEffect(() => void savePresetProfiles(presetProfiles), [presetProfiles]);
+  useEffect(() => void saveClinician(clinician), [clinician]);
+  useEffect(() => void saveSignature(signature), [signature]);
+  useEffect(() => void saveLetterhead(letterhead), [letterhead]);
+  useEffect(() => void saveActiveTemplateId(activeTemplateId), [activeTemplateId]);
 
   // ---- Derived -------------------------------------------------------------
   const activeProfile =
@@ -495,6 +496,8 @@ export function App() {
   const doCopyText = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(renderedBody.trim());
+      // So quitting can clear it if it is still on the clipboard.
+      window.electronAPI?.noteCopied?.(renderedBody.trim());
       notify('Letter body copied to clipboard');
     } catch (err) {
       console.error('Copy failed', err);
@@ -628,6 +631,15 @@ export function App() {
     const updated = templates.filter((t) => t.id !== id);
     setTemplates(updated);
     if (activeTemplateId === id) setActiveTemplateId(updated[0]?.id || '');
+    // Drop anything typed into the deleted letter along with it.
+    const without = (prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    };
+    setValuesCache(without);
+    setLetterDates(without);
+    setLetterSubjects(without);
     notify('Template deleted', 'info');
   };
 
@@ -903,6 +915,7 @@ export function App() {
         onSaveSignature={setSignature}
         clinician={clinician}
         onSaveClinician={setClinician}
+        onNotify={notify}
       />
 
       <BatchMergeModal
