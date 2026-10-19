@@ -1,5 +1,6 @@
 import { app, BrowserWindow, Menu, shell, ipcMain, dialog, clipboard, session } from 'electron';
 import fs from 'fs/promises';
+import { execFile } from 'child_process';
 import { createRequire } from 'module';
 
 // main.js is ESM; the updater is CommonJS because electron-updater is.
@@ -265,6 +266,17 @@ const PDF_OPTIONS = {
   preferCSSPageSize: true,
 };
 
+// Files saved this session: the only ones the page may show in Finder or
+// hand to Mail, so it can't name any other file on the Mac. Kept in memory
+// only, since the names carry clients' names.
+const savedFiles = new Set();
+
+async function writeSaved(filePath, data) {
+  await fs.writeFile(filePath, data);
+  savedFiles.add(filePath);
+  return { saved: true, filePath };
+}
+
 function registerIpcHandlers() {
   // Render the current print-root to a PDF buffer.
   ipcMain.handle('pdf:render', async (event) => {
@@ -286,9 +298,7 @@ function registerIpcHandlers() {
     });
 
     if (canceled || !filePath) return { saved: false };
-
-    await fs.writeFile(filePath, data);
-    return { saved: true, filePath };
+    return writeSaved(filePath, data);
   });
 
   // Ask the user where to drop a batch archive.
@@ -301,9 +311,7 @@ function registerIpcHandlers() {
     });
 
     if (canceled || !filePath) return { saved: false };
-
-    await fs.writeFile(filePath, Buffer.from(buffer));
-    return { saved: true, filePath };
+    return writeSaved(filePath, Buffer.from(buffer));
   });
 
   // Ask where to save an exported Word document.
@@ -316,9 +324,24 @@ function registerIpcHandlers() {
     });
 
     if (canceled || !filePath) return { saved: false };
+    return writeSaved(filePath, Buffer.from(buffer));
+  });
 
-    await fs.writeFile(filePath, Buffer.from(buffer));
-    return { saved: true, filePath };
+  // After an export: show the file in Finder.
+  ipcMain.handle('file:reveal', (event, filePath) => {
+    if (!savedFiles.has(filePath)) return false;
+    shell.showItemInFolder(filePath);
+    return true;
+  });
+
+  // After an export: open a new Mail message with the file attached.
+  // Opening a file with Mail does exactly that, and needs no permission to
+  // control Mail.
+  ipcMain.handle('file:mail', (event, filePath) => {
+    if (process.platform !== 'darwin' || !savedFiles.has(filePath)) return false;
+    return new Promise((resolve) => {
+      execFile('open', ['-a', 'Mail', filePath], (err) => resolve(!err));
+    });
   });
 
   // Native print dialog, driven by the same @media print stylesheet.

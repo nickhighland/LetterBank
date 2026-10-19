@@ -85,6 +85,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Native print dialog.
   printLetter: () => ipcRenderer.invoke('print:letter'),
 
+  // After an export: show the saved file, or attach it to a new Mail message.
+  // Only files saved this session; resolves false otherwise.
+  revealFile: (filePath) => ipcRenderer.invoke('file:reveal', filePath),
+  mailFile: (filePath) => ipcRenderer.invoke('file:mail', filePath),
+
   // --- Updates -------------------------------------------------------------
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   openReleasesPage: () => ipcRenderer.invoke('update:open'),

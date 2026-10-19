@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { flushSync } from 'react-dom';
+import { ShieldAlert } from 'lucide-react';
 
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
@@ -721,6 +722,43 @@ export function App() {
   );
 
   // ---- Export / Print ------------------------------------------------------
+
+  // Asked before the first email of each session, since letters carry
+  // clinical details and ordinary email isn't private.
+  const emailWarned = useRef(false);
+  const attachToMail = useCallback(
+    async (filePath) => {
+      if (!emailWarned.current) {
+        const answer = await ask({
+          title: 'Email isn’t secure',
+          icon: ShieldAlert,
+          message:
+            'Ordinary email can be read on its way and copies stay on mail servers. ' +
+            'Use your secure portal or encrypted email for client letters when you can, ' +
+            'and email only with your client’s agreement.',
+          choices: [{ value: 'attach', label: 'Attach to Mail', primary: true }],
+        });
+        if (answer !== 'attach') return;
+        emailWarned.current = true;
+      }
+      if (!(await window.electronAPI.mailFile(filePath))) notify('Couldn’t open Mail', 'error');
+    },
+    [ask, notify]
+  );
+
+  /** The buttons on a "saved" toast: show the file, and attach it to an email. */
+  const savedFileActions = useCallback(
+    (filePath, { mail = true } = {}) => {
+      const api = window.electronAPI;
+      if (!filePath || !api?.revealFile) return null;
+      const mac = api.platform === 'darwin';
+      const actions = [{ label: mac ? 'Show in Finder' : 'Show in folder', run: () => api.revealFile(filePath) }];
+      if (mail && mac) actions.push({ label: 'Attach to Mail', run: () => attachToMail(filePath) });
+      return actions;
+    },
+    [attachToMail]
+  );
+
   const doExportPdf = useCallback(async () => {
     if (!pages.length) return;
     setIsExporting(true);
@@ -735,7 +773,7 @@ export function App() {
       if (result.method === 'print-dialog') {
         notify('Choose "Save as PDF" in the print dialog', 'info');
       } else if (result.saved) {
-        notify('PDF saved');
+        notify('PDF saved', 'success', savedFileActions(result.filePath));
       }
     } catch (err) {
       console.error('PDF export failed', err);
@@ -743,7 +781,7 @@ export function App() {
     } finally {
       setIsExporting(false);
     }
-  }, [pages.length, currentValues.client_name, activeTemplate?.title, notify]);
+  }, [pages.length, currentValues.client_name, activeTemplate?.title, notify, savedFileActions]);
 
   const handleExportPdf = useCallback(
     () => guardComplete(doExportPdf, 'export this letter'),
@@ -785,7 +823,7 @@ export function App() {
         clientName: currentValues.client_name || '',
         letterDate,
       });
-      if (result.saved) notify('Word document saved');
+      if (result.saved) notify('Word document saved', 'success', savedFileActions(result.filePath));
     } catch (err) {
       console.error('Word export failed', err);
       notify(`Word export failed: ${err.message}`, 'error');
@@ -803,6 +841,7 @@ export function App() {
     renderedSubject,
     letterDate,
     notify,
+    savedFileActions,
   ]);
 
   const handleExportWord = useCallback(
@@ -1124,7 +1163,7 @@ export function App() {
       // A cancelled Save dialog leaves the batch open to try again.
       if (!result?.saved) return;
       setOpenModal(null);
-      notify(`Exported ${records.length} letters`);
+      notify(`Exported ${records.length} letters`, 'success', savedFileActions(result.filePath, { mail: false }));
     } catch (err) {
       console.error('Batch export failed', err);
       notify(err.message, 'error');

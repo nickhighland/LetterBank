@@ -84,5 +84,10 @@ typography, date, signature and page 2 header. Word lays out the text itself,
 so its page breaks can differ slightly from the preview; page breaks you
 add are kept.
 
-CSV mail merge generates a letter per row; batch ZIP export requires the
-desktop app.
+Once a letter is saved, **Show in Finder** opens its folder and **Attach to
+Mail** starts a new Mail message with it attached. The first time in each
+session, LetterBank reminds you that ordinary email isn't secure.
+
+CSV mail merge generates a letter per row, as PDF, Word or both, in one ZIP
+with an optional `summary.csv` listing each letter and any fields left empty.
+Batch export requires the desktop app.
