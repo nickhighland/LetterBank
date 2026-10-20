@@ -17,9 +17,11 @@ and `latest-mac.yml`. Installed copies find the new version through
 
 ## Signing and notarizing
 
-Until the secrets below exist, releases are unsigned, as they have been so far:
-macOS warns on first open, and the app can only tell people a new version is
-out and link to the download.
+Until the secrets below exist, releases are ad-hoc signed rather than signed
+with a Developer ID. macOS blocks the first open; right-click the app and
+choose **Open**, or allow it in System Settings › Privacy & Security › **Open
+Anyway**. The app can only tell people a new version is out and link to the
+download.
 
 Once they exist, every release is signed with your Developer ID and notarized
 by Apple. macOS opens it without a warning, and the app downloads updates in

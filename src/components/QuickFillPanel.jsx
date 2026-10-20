@@ -4,6 +4,7 @@ import { formatLabel, fieldTypeFor, formatLetterDate, toIsoDate } from '../utils
 import { IconButton, TextInput, Field, Badge } from './ui';
 import { isYes } from '../utils/conditions';
 import { PRONOUN_FIELD, PRONOUN_OPTIONS } from '../utils/pronouns';
+import { PronounOverrides } from './PronounOverrides';
 
 const CHIP =
   'px-2 py-1 rounded-md text-[11px] font-medium cursor-pointer transition-colors';
@@ -34,6 +35,7 @@ export function QuickFillPanel({
   bodyOverridden = false,
   onResetBody,
   fieldDefs = {},
+  pronounSources = {},
 }) {
   const dateShortcut = (varName, daysToAdd) => {
     const d = new Date();
@@ -312,7 +314,16 @@ export function QuickFillPanel({
                     ))}
                     {val && !def.options.includes(val) && <option value={val}>{val}</option>}
                   </TextInput>
-                ) : (
+                ) : null}
+                {varName === PRONOUN_FIELD && (
+                  <PronounOverrides
+                    sources={pronounSources}
+                    values={values}
+                    labels={Object.fromEntries(Object.values(fieldDefs).map((d) => [d.name, d.label]))}
+                    onChangeValue={onChangeValue}
+                  />
+                )}
+                {type === 'textarea' || type === 'select' ? null : (
                   <TextInput
                     type={type === 'date' || type === 'time' ? type : type === 'number' ? 'number' : 'text'}
                     inputMode={type === 'number' ? 'decimal' : undefined}

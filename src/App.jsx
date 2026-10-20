@@ -61,6 +61,7 @@ import {
   letterValues,
 } from './utils/fieldDefs';
 import { renderLetterBlocks, splitBody, replaceBlocks } from './utils/letterBlocks';
+import { PRONOUN_OVERRIDES, applyPronounOverrides } from './utils/pronouns';
 import { markupToPlainText } from './utils/letterMarkup';
 import {
   exportStagedPdf,
@@ -333,6 +334,23 @@ export function App() {
   const recipientSource = activeTemplate?.recipient || '';
 
   const currentValues = valuesCache[activeTemplate?.id] || EMPTY_VALUES;
+
+  // What prints, with any single pronoun set apart from the letter's choice
+  // in Quick Fill (a second person, or a client who uses she/they).
+  const pronounOverrides = currentValues[PRONOUN_OVERRIDES];
+  const printedSubject = useMemo(
+    () => applyPronounOverrides(subjectSource, pronounOverrides, 'subject'),
+    [subjectSource, pronounOverrides]
+  );
+  const printedRecipient = useMemo(
+    () => applyPronounOverrides(recipientSource, pronounOverrides, 'recipient'),
+    [recipientSource, pronounOverrides]
+  );
+  const printedBody = useMemo(
+    () => applyPronounOverrides(bodySource, pronounOverrides, 'body'),
+    [bodySource, pronounOverrides]
+  );
+
   const letterSource = `${recipientSource}\n\n${bodySource}\n\n${subjectSource}`;
 
   /** Every field the letter can ask for, whichever way its options go. */
@@ -362,13 +380,13 @@ export function App() {
   const fieldLabels = useMemo(() => labelsOf(fieldDefs), [fieldDefs]);
 
   const renderedSubject = useMemo(
-    () => renderLetter(subjectSource, currentValues, fieldTypes, fieldLabels).trim(),
-    [subjectSource, currentValues, fieldTypes, fieldLabels]
+    () => renderLetter(printedSubject, currentValues, fieldTypes, fieldLabels).trim(),
+    [printedSubject, currentValues, fieldTypes, fieldLabels]
   );
 
   const renderedRecipient = useMemo(
-    () => addressLines(renderLetter(recipientSource, currentValues, fieldTypes, fieldLabels)),
-    [recipientSource, currentValues, fieldTypes, fieldLabels]
+    () => addressLines(renderLetter(printedRecipient, currentValues, fieldTypes, fieldLabels)),
+    [printedRecipient, currentValues, fieldTypes, fieldLabels]
   );
 
   const continuationLine = renderContinuationHeader(letterhead.continuationText, {
@@ -396,17 +414,17 @@ export function App() {
   const signatureOwnsClosing = startsWithClosing(signature.customBlockText);
 
   const renderedBody = useMemo(() => {
-    const rendered = renderLetter(bodySource, currentValues, fieldTypes, fieldLabels);
+    const rendered = renderLetter(printedBody, currentValues, fieldTypes, fieldLabels);
     return signatureOwnsClosing ? stripTrailingClosing(rendered) : rendered;
-  }, [bodySource, currentValues, fieldTypes, fieldLabels, signatureOwnsClosing]);
+  }, [printedBody, currentValues, fieldTypes, fieldLabels, signatureOwnsClosing]);
 
   /** The same letter as blocks that know where in the template they came from. */
   const renderedBlocks = useMemo(
     () =>
-      renderLetterBlocks(bodySource, currentValues, fieldTypes, fieldLabels, {
+      renderLetterBlocks(printedBody, currentValues, fieldTypes, fieldLabels, {
         stripClosing: signatureOwnsClosing,
       }),
-    [bodySource, currentValues, fieldTypes, fieldLabels, signatureOwnsClosing]
+    [printedBody, currentValues, fieldTypes, fieldLabels, signatureOwnsClosing]
   );
 
   /**
@@ -1337,6 +1355,7 @@ export function App() {
             incompleteFields={incompleteFields}
             fieldTypes={fieldTypes}
             fieldDefs={fieldDefs}
+            pronounSources={{ subject: subjectSource, recipient: recipientSource, body: bodySource }}
             subjectSource={subjectSource}
             subjectOverridden={subjectOverridden}
             continuationLine={continuationLine}

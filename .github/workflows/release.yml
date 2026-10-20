@@ -49,13 +49,17 @@ jobs:
 
       - name: Build and publish
         run: |
+          identity=()
           if [ -n "$MAC_CERTIFICATE" ]; then
             export CSC_LINK="$MAC_CERTIFICATE" CSC_KEY_PASSWORD="$MAC_CERTIFICATE_PASSWORD"
           else
-            echo "::warning::No signing certificate in the repository secrets; this release is unsigned."
+            echo "::warning::No signing certificate in the repository secrets; this release is ad-hoc signed."
             export CSC_IDENTITY_AUTO_DISCOVERY=false
+            # A bundle with no signature at all is reported as "damaged" once
+            # downloaded; an ad-hoc signature lets macOS offer Open Anyway.
+            identity=(-c.mac.identity=-)
           fi
-          npx electron-builder --mac --arm64 --publish always
+          npx electron-builder --mac --arm64 --publish always "${identity[@]}"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Developer ID Application certificate (.p12, base64) and its password.
