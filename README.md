@@ -66,6 +66,22 @@ field already in the letter, a common one, or **Custom field…** with a name an
 a type. Date fields open a date picker in Quick Fill and print as prose
 ("October 18, 2026"); Time fields open a time picker.
 
+**Pronouns** are set once per letter. In the Editor, right-click where the
+word goes, choose **Pronouns** and pick the form; tick **Capitalised** to
+start a sentence. Quick Fill then shows one Pronouns choice (she/her, he/him
+or they/them) and fills every pronoun in the letter from it:
+
+| Form | Placeholder | Example |
+| --- | --- | --- |
+| Subject | `{{They}}` | "She has demonstrated excellent progress." |
+| Object | `{{them}}` | "It has been a pleasure working with him." |
+| Possessive adjective | `{{Their}}` | "Their performance has improved." |
+| Possessive pronoun | `{{theirs}}` | "The responsibility is hers." |
+| Reflexive | `{{themselves}}` | "He completed the assignment himself." |
+
+`{{they_are}}`, `{{they_were}}` and `{{they_have}}` keep the verb in
+agreement: "she is", "they are".
+
 Each letter's **Subject** can be reworded in Quick Fill without touching the
 template. Page 2 onward carries it in the header — "RE: Medical Leave for Jane
 Doe" — set in Document setup as `RE: {{subject}}`.

@@ -6,14 +6,14 @@ import { normaliseFieldDef } from '../utils/fieldDefs';
 import { PRONOUN_FIELD } from '../utils/pronouns';
 
 const PRONOUN_WORDS = [
-  ['they', 'they · she · he'],
-  ['them', 'them · her · him'],
-  ['their', 'their · her · his'],
-  ['theirs', 'theirs · hers · his'],
-  ['themselves', 'themselves · herself · himself'],
-  ['they_are', 'they are · she is · he is'],
-  ['they_were', 'they were · she was · he was'],
-  ['they_have', 'they have · she has · he has'],
+  ['they', 'Subject', 'they · she · he'],
+  ['them', 'Object', 'them · her · him'],
+  ['their', 'Possessive adjective', 'their · her · his'],
+  ['theirs', 'Possessive pronoun', 'theirs · hers · his'],
+  ['themselves', 'Reflexive', 'themselves · herself · himself'],
+  ['they_are', 'Subject + is', 'they are · she is · he is'],
+  ['they_were', 'Subject + was', 'they were · she was · he was'],
+  ['they_have', 'Subject + has', 'they have · she has · he has'],
 ];
 const capitalise = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 import { FieldForm, TYPE_ICONS, newFieldDef, isFieldDefComplete } from './FieldForm';
@@ -205,7 +205,7 @@ export function FieldMenu({
             Follows the Pronouns field in Quick Fill.
           </p>
           <div className="space-y-0.5">
-            {PRONOUN_WORDS.map(([token, reads]) => {
+            {PRONOUN_WORDS.map(([token, form, reads]) => {
               const name = pronounPick.capital ? capitalise(token) : token;
               return (
                 <button
@@ -215,7 +215,10 @@ export function FieldMenu({
                   className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left cursor-pointer
                              text-[12.5px] text-ink hover:bg-surface-hover"
                 >
-                  <span>{pronounPick.capital ? capitalise(reads) : reads}</span>
+                  <span className="min-w-0">
+                    <span className="block text-[10.5px] text-ink-muted">{form}</span>
+                    {pronounPick.capital ? capitalise(reads) : reads}
+                  </span>
                   <code className="text-[10.5px] text-ink-faint">{`{{${name}}}`}</code>
                 </button>
               );
