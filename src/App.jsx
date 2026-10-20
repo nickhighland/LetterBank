@@ -70,6 +70,7 @@ import {
   isDesktop,
 } from './utils/exporter';
 import { exportDocx, buildDocx } from './utils/docxExporter';
+import { addressLines } from './utils/recipient';
 import { paginateLetter } from './utils/documentPaginator';
 import { mergeRecordValues } from './utils/batch';
 import { useLetterPages } from './hooks/useLetterPages';
@@ -325,8 +326,11 @@ export function App() {
     [activeTemplate?.id]
   );
 
+  // The address the letter is sent to, if it has one (Editor › Recipient address).
+  const recipientSource = activeTemplate?.recipient || '';
+
   const currentValues = valuesCache[activeTemplate?.id] || EMPTY_VALUES;
-  const letterSource = `${bodySource}\n\n${subjectSource}`;
+  const letterSource = `${recipientSource}\n\n${bodySource}\n\n${subjectSource}`;
 
   /** Every field the letter can ask for, whichever way its options go. */
   const allVariables = useMemo(() => allLetterFields(letterSource), [letterSource]);
@@ -334,11 +338,12 @@ export function App() {
   /** The fields the letter uses as it stands: what Quick Fill shows. */
   const activeVariables = useMemo(() => {
     const names = [
+      ...letterFieldsInUse(recipientSource, currentValues),
       ...letterFieldsInUse(bodySource, currentValues),
       ...letterFieldsInUse(subjectSource, currentValues),
     ];
     return [...new Set(names)];
-  }, [bodySource, subjectSource, currentValues]);
+  }, [recipientSource, bodySource, subjectSource, currentValues]);
 
   /** Each field's label, type, help and choices. See utils/fieldDefs.js. */
   const fieldDefs = useMemo(
@@ -356,6 +361,11 @@ export function App() {
   const renderedSubject = useMemo(
     () => renderLetter(subjectSource, currentValues, fieldTypes, fieldLabels).trim(),
     [subjectSource, currentValues, fieldTypes, fieldLabels]
+  );
+
+  const renderedRecipient = useMemo(
+    () => addressLines(renderLetter(recipientSource, currentValues, fieldTypes, fieldLabels)),
+    [recipientSource, currentValues, fieldTypes, fieldLabels]
   );
 
   const continuationLine = renderContinuationHeader(letterhead.continuationText, {
@@ -425,7 +435,12 @@ export function App() {
     [activeTemplate?.id]
   );
 
-  const pages = useLetterPages({ blocks: renderedBlocks, letterhead, signature });
+  const pages = useLetterPages({
+    blocks: renderedBlocks,
+    letterhead,
+    signature,
+    recipient: renderedRecipient,
+  });
 
   // ---- Editing on the page --------------------------------------------------
   /**
@@ -822,6 +837,7 @@ export function App() {
         subject: renderedSubject,
         clientName: currentValues.client_name || '',
         letterDate,
+        recipient: renderedRecipient,
       });
       if (result.saved) notify('Word document saved', 'success', savedFileActions(result.filePath));
     } catch (err) {
@@ -839,6 +855,7 @@ export function App() {
     signature,
     clinician,
     renderedSubject,
+    renderedRecipient,
     letterDate,
     notify,
     savedFileActions,
@@ -1087,10 +1104,12 @@ export function App() {
       const blocks = renderLetterBlocks(bodySource, rowValues, fieldTypes, fieldLabels, {
         stripClosing: signatureOwnsClosing,
       });
+      const recipient = addressLines(renderLetter(recipientSource, rowValues, fieldTypes, fieldLabels));
       return {
         rowValues,
         blocks,
-        pages: paginateLetter({ blocks, letterhead, signature }),
+        recipient,
+        pages: paginateLetter({ blocks, letterhead, signature, recipient }),
         clientName: rowValues.client_name || '',
         subject: renderLetter(subjectSource, rowValues, fieldTypes, fieldLabels).trim(),
       };
@@ -1102,6 +1121,7 @@ export function App() {
       letterhead,
       signature,
       signatureOwnsClosing,
+      recipientSource,
       subjectSource,
       fieldTypes,
       fieldLabels,
@@ -1120,7 +1140,7 @@ export function App() {
 
   const buildRecordDocx = useCallback(
     (record) => {
-      const { rowValues, pages: recordPages, clientName, subject } = recordLetter(record);
+      const { rowValues, pages: recordPages, clientName, subject, recipient } = recordLetter(record);
       const raw = renderLetter(bodySource, rowValues, fieldTypes, fieldLabels);
       return buildDocx({
         renderedBody: signatureOwnsClosing ? stripTrailingClosing(raw) : raw,
@@ -1131,6 +1151,7 @@ export function App() {
         subject,
         clientName,
         letterDate,
+        recipient,
       });
     },
     [
@@ -1345,6 +1366,7 @@ export function App() {
         fieldTypes={fieldTypes}
         fieldsFor={(values) => [
           ...new Set([
+            ...letterFieldsInUse(recipientSource, values),
             ...letterFieldsInUse(bodySource, values),
             ...letterFieldsInUse(subjectSource, values),
           ]),

@@ -28,6 +28,7 @@ import { Modal, Button, Field, TextInput, SegmentedControl } from './ui';
 import { resolveSignatureTokens } from './LetterDocument';
 import { FieldLibraryPanel } from './FieldLibraryPanel';
 import { normaliseFieldLibrary } from '../utils/fieldDefs';
+import { marginHidesWindow } from '../utils/recipient';
 
 // ---- Letterhead Constants ----
 const MARGIN_PRESETS = [
@@ -585,7 +586,7 @@ export function SettingsModal({
               options={[
                 { value: 'page', label: 'Page & Margins' },
                 { value: 'type', label: 'Typography' },
-                { value: 'furniture', label: 'Date & Numbering' },
+                { value: 'furniture', label: 'Date, Address & Numbering' },
               ]}
             />
 
@@ -795,6 +796,25 @@ export function SettingsModal({
                       </Field>
                     </div>
                   </div>
+                </Toggle>
+
+                <Toggle
+                  checked={currentLh.recipientLayout === 'window'}
+                  onChange={(v) => setLh({ recipientLayout: v ? 'window' : 'standard' })}
+                  label="Place addresses for a #10 window envelope"
+                  hint="For letters with a recipient address (set in the Editor). Off, the address prints above the letter."
+                >
+                  <p className="pt-3 text-[12px] leading-relaxed text-ink-secondary">
+                    The address prints 2¼″ from the top and about 1″ from the left, where the window shows it
+                    when the letter is folded in three. Four lines fit, at up to 12 pt; the letter starts below
+                    the window.
+                  </p>
+                  {marginHidesWindow(currentLh) && (
+                    <p className="text-[12px] leading-relaxed text-warning">
+                      Your top margin ({pxToInches(currentLh.topMargin)}″) starts below the window, so the
+                      address will print over the top of the page.
+                    </p>
+                  )}
                 </Toggle>
 
                 <Toggle

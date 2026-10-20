@@ -4,6 +4,7 @@ import { INDENT_STEP, parseInline } from '../utils/letterMarkup';
 import { overlaps } from '../utils/letterBlocks';
 import { resolveLetterhead } from '../utils/storage';
 import { fillableArea } from '../constants/page';
+import { ADDRESS_LINE_HEIGHT, WINDOW_ENVELOPE, inWindow, windowLayout } from '../utils/recipient';
 
 /**
  * The single source of truth for what a letter looks like.
@@ -187,6 +188,16 @@ function LetterBlock({ block, paragraphSpacing, bodyAlignment, onEdit }) {
   );
 }
 
+/** The recipient's address: lines of text, each with its own formatting. */
+function AddressLines({ lines }) {
+  return lines.map((line, i) => (
+    <React.Fragment key={i}>
+      {i > 0 && <br />}
+      <Inline text={line} />
+    </React.Fragment>
+  ));
+}
+
 /**
  * Renders one physical 816x1056 page.
  */
@@ -207,6 +218,37 @@ export function LetterPage({
   const fontFamily = fontStack(letterhead.fontFamily);
   const { fontSize, lineHeight } = letterhead;
   const { width: fillableWidth, height: fillableHeight } = fillableArea(letterhead);
+  const recipient = page.recipient || [];
+  // In a window envelope the address sits at a fixed place on the paper, and
+  // page 1's text keeps clear of it (see utils/recipient).
+  const envelope = inWindow(letterhead, recipient) ? windowLayout(letterhead) : null;
+
+  const dateLine = letterhead.showDate && (
+    <div
+      className="letter-date-line"
+      style={{
+        fontFamily,
+        fontSize: `${fontSize + letterhead.dateSize}pt`,
+        textAlign: letterhead.dateAlignment,
+        marginTop: letterhead.dateSpaceBefore,
+        marginBottom: letterhead.dateSpaceAfter,
+      }}
+    >
+      {formatLetterDate(letterDate, letterhead.dateFormat)}
+    </div>
+  );
+
+  let firstPageTop = dateLine;
+  if (envelope) {
+    firstPageTop = envelope.dateAbove ? (
+      <div style={{ height: envelope.toBody, flexShrink: 0 }}>{dateLine}</div>
+    ) : (
+      <>
+        <div style={{ height: envelope.toBody, flexShrink: 0 }} />
+        {dateLine}
+      </>
+    );
+  }
 
   return (
     <div className="letter-page-canvas">
@@ -255,20 +297,7 @@ export function LetterPage({
         }}
       >
         {page.pageNumber === 1
-          ? letterhead.showDate && (
-              <div
-                className="letter-date-line"
-                style={{
-                  fontFamily,
-                  fontSize: `${fontSize + letterhead.dateSize}pt`,
-                  textAlign: letterhead.dateAlignment,
-                  marginTop: letterhead.dateSpaceBefore,
-                  marginBottom: letterhead.dateSpaceAfter,
-                }}
-              >
-                {formatLetterDate(letterDate, letterhead.dateFormat)}
-              </div>
-            )
+          ? firstPageTop
           : letterhead.showContinuationHeader && (
               <div
                 className="letter-continuation-header"
@@ -295,6 +324,18 @@ export function LetterPage({
             textAlign: letterhead.bodyAlignment,
           }}
         >
+          {recipient.length > 0 && !envelope && (
+            <div
+              className="letter-recipient"
+              style={{
+                lineHeight: ADDRESS_LINE_HEIGHT,
+                marginBottom: `${letterhead.paragraphSpacing}em`,
+                textAlign: 'left',
+              }}
+            >
+              <AddressLines lines={recipient} />
+            </div>
+          )}
           {(page.blocks || []).map((block, i) => {
             // The paragraph being edited shows the editor in its place; any
             // more of it (the rest of a long paragraph, on the next page) hides.
@@ -328,6 +369,24 @@ export function LetterPage({
         )}
       </div>
 
+      {envelope && (
+        <div
+          className="letter-recipient is-window"
+          style={{
+            position: 'absolute',
+            zIndex: 2,
+            top: WINDOW_ENVELOPE.top,
+            left: envelope.left,
+            width: WINDOW_ENVELOPE.width,
+            fontFamily,
+            fontSize: `${envelope.fontSize}pt`,
+            lineHeight: WINDOW_ENVELOPE.lineHeight,
+          }}
+        >
+          <AddressLines lines={recipient} />
+        </div>
+      )}
+
       {letterhead.showPageNumbers &&
         (page.totalPages > 1 || letterhead.pageNumbersOnSinglePage) && (
           <div className={`letter-page-folio is-${letterhead.pageNumberPosition}`}>
@@ -352,7 +411,11 @@ export function LetterDocument({
   letterDate,
   edit,
 }) {
-  const centerSingle = pages.length === 1 && letterhead.verticalCenterSinglePage;
+  // An address in the envelope window fixes where page 1's text starts.
+  const centerSingle =
+    pages.length === 1 &&
+    letterhead.verticalCenterSinglePage &&
+    !inWindow(resolveLetterhead(letterhead), pages[0].recipient);
 
   let editorAt = null;
   if (edit?.active) {

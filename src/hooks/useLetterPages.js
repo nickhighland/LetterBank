@@ -9,11 +9,11 @@ import { useFontsReady } from './useFontsReady';
  * what comes out of the printer. Pagination is deferred until webfonts are
  * ready, otherwise the first pass measures fallback metrics.
  */
-export function useLetterPages({ blocks, letterhead, signature }) {
+export function useLetterPages({ blocks, letterhead, signature, recipient }) {
   const fontsReady = useFontsReady();
 
   return useMemo(() => {
     if (!fontsReady) return [];
-    return paginateLetter({ blocks, letterhead, signature });
-  }, [fontsReady, blocks, letterhead, signature]);
+    return paginateLetter({ blocks, letterhead, signature, recipient });
+  }, [fontsReady, blocks, letterhead, signature, recipient]);
 }

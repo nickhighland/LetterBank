@@ -5,6 +5,7 @@ import { formatLetterDate, renderContinuationHeader } from './variableParser';
 import { resolveLetterhead } from './storage';
 import { resolveSignatureTokens } from '../components/LetterDocument';
 import { PAGE_WIDTH, PAGE_HEIGHT } from '../constants/page';
+import { ADDRESS_LINE_HEIGHT, WINDOW_ENVELOPE, dateHeight, inWindow, windowLayout } from './recipient';
 import { isDesktop } from './exporter';
 
 /**
@@ -17,7 +18,8 @@ import { isDesktop } from './exporter';
  *
  *   - body paragraphs, bullets, numbered lists, bold/italic/underline,
  *     alignment and indents from the letter markup
- *   - the date line on page 1 and the signature block (with its image)
+ *   - the date line and recipient address on page 1, and the signature
+ *     block (with its image)
  *   - the letterhead artwork as a full-page image behind the text, in the
  *     page header so it repeats on every page
  *   - the "RE: <subject>  Page X of Y" header from page 2 onward, using
@@ -84,6 +86,7 @@ function paragraph(content, {
   before = 0,
   after = 0,
   line,
+  exact,
   indentLeft = 0,
   indentRight = 0,
   hanging = 0,
@@ -99,6 +102,8 @@ function paragraph(content, {
     extra +
     `<w:spacing w:before="${Math.round(before)}" w:after="${Math.round(after)}"` +
     (line ? ` w:line="${Math.round(line * 240)}" w:lineRule="auto"` : '') +
+    // An exact line height in twips: what puts a window address where the window is.
+    (exact ? ` w:line="${Math.max(1, Math.round(exact))}" w:lineRule="exact"` : '') +
     '/>' +
     (indentLeft || indentRight || hanging
       ? `<w:ind w:left="${Math.round(indentLeft)}" w:right="${Math.round(indentRight)}"` +
@@ -390,6 +395,7 @@ export async function buildDocx({
   subject,
   clientName,
   letterDate,
+  recipient = [],
 }) {
   drawingId = 1;
   const lh = resolveLetterhead(rawLetterhead);
@@ -476,17 +482,69 @@ export async function buildDocx({
 
   // --- Body.
   const body = [];
-  if (lh.showDate) {
+  const envelope = inWindow(lh, recipient) ? windowLayout(lh) : null;
+  const dateRun = textRun(formatLetterDate(letterDate, lh.dateFormat), {
+    font: lh.fontFamily,
+    size: lh.fontSize + lh.dateSize,
+    color: BODY_COLOR,
+  });
+  const addressRuns = (base) =>
+    recipient.map((line, i) => (i > 0 ? '<w:r><w:br/></w:r>' : '') + inlineRuns(line, base)).join('');
+
+  if (envelope) {
+    // Word places text by flow, not position, so everything above the
+    // address has an exact height: the date, then space down to the window,
+    // the address, then space down to the letter's first line.
+    const W = WINDOW_ENVELOPE;
+    let y = lh.topMargin;
+    if (envelope.dateAbove && lh.showDate) {
+      const lineHeight = dateHeight(lh) - lh.dateSpaceBefore - lh.dateSpaceAfter;
+      body.push(
+        paragraph(dateRun, {
+          align: lh.dateAlignment,
+          before: twips(lh.dateSpaceBefore),
+          after: twips(lh.dateSpaceAfter),
+          exact: twips(lineHeight),
+        })
+      );
+      y += dateHeight(lh);
+    }
+    const lineHeight = envelope.fontSize * W.lineHeight * (96 / 72); // pt -> px
     body.push(
-      paragraph(
-        textRun(formatLetterDate(letterDate, lh.dateFormat), {
-          font: lh.fontFamily,
-          size: lh.fontSize + lh.dateSize,
-          color: BODY_COLOR,
-        }),
-        { align: lh.dateAlignment, before: twips(lh.dateSpaceBefore), after: twips(lh.dateSpaceAfter) }
-      )
+      paragraph(addressRuns({ font: lh.fontFamily, size: envelope.fontSize, color: BODY_COLOR }), {
+        before: twips(Math.max(0, W.top - y)),
+        after: twips(Math.max(0, W.height + W.gapAfter - recipient.length * lineHeight)),
+        exact: twips(lineHeight),
+        indentLeft: twips(envelope.left - lh.leftMargin),
+      })
     );
+    if (!envelope.dateAbove && lh.showDate) {
+      body.push(
+        paragraph(dateRun, {
+          align: lh.dateAlignment,
+          before: twips(lh.dateSpaceBefore),
+          after: twips(lh.dateSpaceAfter),
+        })
+      );
+    }
+  } else {
+    if (lh.showDate) {
+      body.push(
+        paragraph(dateRun, {
+          align: lh.dateAlignment,
+          before: twips(lh.dateSpaceBefore),
+          after: twips(lh.dateSpaceAfter),
+        })
+      );
+    }
+    if (recipient.length) {
+      body.push(
+        paragraph(addressRuns({ font: lh.fontFamily, size: lh.fontSize, color: BODY_COLOR }), {
+          after: lh.paragraphSpacing * lh.fontSize * 20,
+          line: ADDRESS_LINE_HEIGHT,
+        })
+      );
+    }
   }
   body.push(...bodyParagraphs(renderedBody, lh));
   body.push(...(await signatureParagraphs(signature, clinician, lh, imageAdder('document'))));
@@ -501,7 +559,7 @@ export async function buildDocx({
     `<w:pgMar w:top="${twips(lh.topMargin)}" w:right="${twips(lh.rightMargin)}" ` +
     `w:bottom="${twips(lh.bottomMargin)}" w:left="${twips(lh.leftMargin)}" ` +
     `w:header="${twips(lh.topMargin)}" w:footer="${twips(12)}" w:gutter="0"/>` +
-    (pageCount === 1 && lh.verticalCenterSinglePage ? '<w:vAlign w:val="center"/>' : '') +
+    (pageCount === 1 && lh.verticalCenterSinglePage && !envelope ? '<w:vAlign w:val="center"/>' : '') +
     '<w:titlePg/>' +
     '</w:sectPr>';
 

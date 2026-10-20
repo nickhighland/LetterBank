@@ -54,6 +54,12 @@ Each letter's **Subject** can be reworded in Quick Fill without touching the
 template. Page 2 onward carries it in the header — "RE: Medical Leave for Jane
 Doe" — set in Document setup as `RE: {{subject}}`.
 
+A letter that is mailed can have a **Recipient address** (in the Editor), made
+of fields like `{{client_name}}` and `{{client_address}}`. It prints under the
+date, or, with **Place addresses for a #10 window envelope** on in Settings ›
+Letterhead, 2¼″ down and about 1″ in, where the window shows it when the
+letter is folded in three.
+
 The letter is written in a word-processor style editor: bold, italic,
 underline, alignment, lists, indent and page breaks from the toolbar or the
 usual shortcuts (the **?** button lists them). Fields and optional wording

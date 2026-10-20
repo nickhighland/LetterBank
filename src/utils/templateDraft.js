@@ -8,6 +8,7 @@ export const draftFrom = (template) => ({
   title: template?.title || '',
   category: template?.category || 'General',
   subject: template?.subject || '',
+  recipient: template?.recipient || '',
   body: template?.body || '',
   description: template?.description || '',
   fields: template?.fields || [],
@@ -21,6 +22,7 @@ export function isDraftDirty(template, draft) {
     draft.title !== saved.title ||
     draft.category !== saved.category ||
     draft.subject !== saved.subject ||
+    (draft.recipient || '') !== saved.recipient ||
     draft.body !== saved.body ||
     draft.description !== saved.description ||
     JSON.stringify(draft.fields || []) !== JSON.stringify(saved.fields)

@@ -2,6 +2,7 @@ import { parseBlocks, blocksToHtml } from './letterMarkup';
 import { PAGE_BREAK_RE } from './letterBlocks';
 import { resolveLetterhead } from './storage';
 import { fillableArea } from '../constants/page';
+import { addressHtml, dateHeight, inWindow, windowLayout } from './recipient';
 
 /**
  * Document Paginator Engine
@@ -23,6 +24,8 @@ export function paginateDocument({
   dateBlockHeight = 35,
   showContinuationHeader = true,
   signatureConfig = {},
+  firstPageHeader,
+  firstPageHtml = '',
 }) {
   const allBlocks = givenBlocks ?? textToBlocks(renderedBody);
   const hasManualBreaks = allBlocks.some((b) => b.kind === 'pagebreak');
@@ -37,13 +40,11 @@ export function paginateDocument({
   }
   sigHeight += 25; // padding/margin
 
-  // Page 1 carries the date line; pages 2+ carry the continuation header.
-  // Both are optional, and hiding one gives that space back to the body.
-  const dateHeaderHeight = showDate ? dateBlockHeight : 0;
+  // Page 1 carries the date line (and the address, when there is one);
+  // pages 2+ carry the continuation header. Both are optional, and hiding
+  // one gives that space back to the body.
+  let firstHeaderHeight = firstPageHeader ?? (showDate ? dateBlockHeight : 0);
   const continuationHeaderHeight = showContinuationHeader ? 28 : 0;
-
-  // Single page capacity
-  const singlePageMaxContentHeight = fillableHeight - dateHeaderHeight - sigHeight - 15;
 
   // Create temporary invisible element in DOM to measure exact rendered heights
   const measureEl = document.createElement('div');
@@ -64,6 +65,12 @@ export function paginateDocument({
   document.body.appendChild(measureEl);
 
   try {
+    if (firstPageHtml) {
+      measureEl.innerHTML = firstPageHtml;
+      firstHeaderHeight += measureEl.scrollHeight;
+    }
+    const singlePageMaxContentHeight = fillableHeight - firstHeaderHeight - sigHeight - 15;
+
     // Measure total content height, from the same block model the renderer uses.
     measureEl.innerHTML = blocksToHtml(allBlocks, { paragraphSpacing, bodyAlignment });
     const totalContentHeight = measureEl.scrollHeight;
@@ -88,7 +95,7 @@ export function paginateDocument({
     let currentPageNumber = 1;
 
     // Available height for Page 1
-    let availableHeight = fillableHeight - dateHeaderHeight - 15;
+    let availableHeight = fillableHeight - firstHeaderHeight - 15;
 
     for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
       const paragraph = paragraphs[pIdx];
@@ -224,11 +231,20 @@ export function paginateLetter({
   renderedBody,
   letterhead: rawLetterhead,
   signature,
+  recipient = [],
 }) {
   const letterhead = resolveLetterhead(rawLetterhead);
   const { width: fillableWidth, height: fillableHeight } = fillableArea(letterhead);
 
-  return paginateDocument({
+  // The address takes a fixed slice of page 1 in a window envelope, and its
+  // own height above the letter otherwise.
+  const address = recipient.length
+    ? inWindow(letterhead, recipient)
+      ? { firstPageHeader: windowLayout(letterhead).header }
+      : { firstPageHtml: addressHtml(recipient, letterhead.paragraphSpacing) }
+    : {};
+
+  const pages = paginateDocument({
     blocks,
     renderedBody,
     fillableWidth,
@@ -241,13 +257,14 @@ export function paginateLetter({
     showDate: letterhead.showDate,
     // Reserve what the date actually occupies, so changing its size or
     // spacing repaginates instead of silently overflowing.
-    dateBlockHeight:
-      (letterhead.fontSize + letterhead.dateSize) * 1.6 +
-      letterhead.dateSpaceBefore +
-      letterhead.dateSpaceAfter,
+    dateBlockHeight: dateHeight(letterhead),
     showContinuationHeader: letterhead.showContinuationHeader,
     signatureConfig: signature,
+    ...address,
   });
+
+  // Page 1 carries the address, so every renderer of the pages prints it.
+  return recipient.length ? pages.map((p) => (p.pageNumber === 1 ? { ...p, recipient } : p)) : pages;
 }
 
 /**

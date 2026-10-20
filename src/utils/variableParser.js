@@ -40,7 +40,9 @@ export function inferFieldType(varName) {
     lower.includes('reasons') ||
     lower.includes('observations') ||
     lower.includes('accommodations') ||
-    lower.includes('resources')
+    lower.includes('resources') ||
+    // A postal address, on several lines; an email address is one line.
+    (lower.includes('address') && !lower.includes('email'))
   ) {
     return 'textarea';
   }
@@ -79,8 +81,18 @@ export const BUILT_IN_FIELDS = [
   { name: 'end_date', type: 'date' },
   { name: 'appointment_date', type: 'date' },
   { name: 'appointment_time', type: 'time' },
+  {
+    name: 'client_address',
+    type: 'textarea',
+    help: 'Street on the first line, then city, state and ZIP.',
+  },
   { name: 'recipient_name', type: 'text' },
   { name: 'recipient_organization', type: 'text' },
+  {
+    name: 'recipient_address',
+    type: 'textarea',
+    help: 'Street on the first line, then city, state and ZIP.',
+  },
   { name: 'diagnosis', type: 'text' },
   { name: 'clinical_summary', type: 'textarea' },
   { name: 'clinician_name', type: 'text' },

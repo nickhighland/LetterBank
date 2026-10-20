@@ -110,7 +110,15 @@ export const backupFileName = (date = new Date()) =>
   `LetterBank Backup ${date.toISOString().slice(0, 10)}.json`;
 
 const letterContent = (t) =>
-  JSON.stringify([t.title || '', t.category || '', t.subject || '', t.body || '', t.description || '', t.fields || []]);
+  JSON.stringify([
+    t.title || '',
+    t.category || '',
+    t.subject || '',
+    t.body || '',
+    t.description || '',
+    t.fields || [],
+    t.recipient || '',
+  ]);
 
 /**
  * The letters from `imported` worth adding to `existing`. A letter the library

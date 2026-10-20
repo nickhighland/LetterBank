@@ -108,6 +108,10 @@ export const DEFAULT_LETTERHEAD = {
   dateSpaceBefore: 0,             // px above the date
   dateSpaceAfter: 14,             // px between the date and the body
 
+  // Where a letter's recipient address prints: above the letter, or where a
+  // #10 window envelope shows it (see utils/recipient).
+  recipientLayout: 'standard',    // 'standard' | 'window'
+
   // Continuation header on page 2 and beyond.
   showContinuationHeader: true,
   continuationText: 'RE: {{subject}}',

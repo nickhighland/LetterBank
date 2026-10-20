@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Save, Copy, RotateCcw } from 'lucide-react';
+import { Save, Copy, RotateCcw, Plus } from 'lucide-react';
 import { EditorContent } from '@tiptap/react';
 import { formatLabel } from '../utils/variableParser';
 import { allLetterFields, resolveFieldDefs, withFieldDef } from '../utils/fieldDefs';
@@ -20,6 +20,15 @@ import { insertField as insertFieldInEditor, wrapOptional } from '../editor/comm
  * here, switching to Quick Fill unmounted the editor and threw unsaved edits
  * away without asking, and the preview never showed them until Save.
  */
+/** Starting points for a letter's recipient address. */
+const ADDRESSES = [
+  { label: 'Client’s address', text: '{{client_name}}\n{{client_address}}' },
+  {
+    label: 'Someone else’s',
+    text: '{{recipient_name}}\n{{recipient_organization}}\n{{recipient_address}}',
+  },
+];
+
 /** How a placeholder reads in the editor: its field's label, or the pronoun it stands for. */
 const chipText = (name, defs) =>
   isPronounToken(name) ? name.replace(/_/g, ' ') : defs[name]?.label || formatLabel(name);
@@ -38,7 +47,8 @@ export function DocumentEditor({
   const [showHelp, setShowHelp] = useState(false);
 
   const subjectRef = useRef(null);
-  // { x, y, target: 'body' | 'subject', optional? } while the Insert field menu is open.
+  const recipientRef = useRef(null);
+  // { x, y, target: 'body' | 'subject' | 'recipient', optional? } while the Insert field menu is open.
   const [fieldMenu, setFieldMenu] = useState(null);
   const [editingField, setEditingField] = useState(null);
 
@@ -56,7 +66,7 @@ export function DocumentEditor({
     editorClass: 'lb-pane-editor',
   });
 
-  const letterText = `${draft.body}\n\n${draft.subject}`;
+  const letterText = `${draft.recipient || ''}\n\n${draft.body}\n\n${draft.subject}`;
   const variables = allLetterFields(letterText);
   const defs = resolveFieldDefs(variables, {
     text: letterText,
@@ -78,17 +88,17 @@ export function DocumentEditor({
       return;
     }
     const token = `{{${name}}}`;
-    const el = subjectRef.current;
+    const el = (target === 'recipient' ? recipientRef : subjectRef).current;
     setDraft((prev) => {
-      const text = prev.subject;
-      if (!el) return { ...prev, subject: `${text}${token}` };
+      const text = prev[target] || '';
+      if (!el) return { ...prev, [target]: `${text}${token}` };
       const start = el.selectionStart ?? text.length;
       const end = el.selectionEnd ?? text.length;
       requestAnimationFrame(() => {
         el.focus();
         el.setSelectionRange(start + token.length, start + token.length);
       });
-      return { ...prev, subject: text.slice(0, start) + token + text.slice(end) };
+      return { ...prev, [target]: text.slice(0, start) + token + text.slice(end) };
     });
   };
 
@@ -177,6 +187,47 @@ export function DocumentEditor({
             />
           </Field>
         </div>
+
+        <Field
+          label="Recipient address"
+          hint={
+            draft.recipient
+              ? 'Printed on page 1, above the letter or in a window envelope (Settings › Letterhead). Right-click to insert a field.'
+              : 'For letters that are mailed. Leave it off for the rest.'
+          }
+          action={
+            draft.recipient ? (
+              <button
+                type="button"
+                onClick={() => set({ recipient: '' })}
+                className="text-[11px] font-medium cursor-pointer text-ink-muted hover:text-danger"
+              >
+                Remove
+              </button>
+            ) : null
+          }
+        >
+          {draft.recipient ? (
+            <TextInput
+              as="textarea"
+              rows={3}
+              ref={recipientRef}
+              aria-label="Recipient address"
+              value={draft.recipient}
+              onChange={(e) => set({ recipient: e.target.value })}
+              onContextMenu={openFieldMenu('recipient')}
+            />
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {ADDRESSES.map(({ label, text }) => (
+                <Button key={label} onClick={() => set({ recipient: text })} className="!h-8 !px-3 !text-[12px]">
+                  <Plus className="w-3.5 h-3.5" />
+                  {label}
+                </Button>
+              ))}
+            </div>
+          )}
+        </Field>
 
         <Field label="Description">
           <TextInput
