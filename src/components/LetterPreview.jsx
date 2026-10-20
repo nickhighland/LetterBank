@@ -1,6 +1,7 @@
-import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
-import { ZoomIn, ZoomOut, Image as ImageIcon, Ruler, FileText, Maximize2 } from 'lucide-react';
+import React, { useState, useRef, useLayoutEffect, useCallback, useEffect } from 'react';
+import { ZoomIn, ZoomOut, Image as ImageIcon, Ruler, FileText, Maximize2, MousePointerClick } from 'lucide-react';
 import { LetterDocument } from './LetterDocument';
+import { PageBlockEditor } from '../editor/PageBlockEditor';
 import { PAGE_WIDTH, PAGE_HEIGHT, PAGE_GAP } from '../constants/page';
 
 const MAT = 40; // breathing room between the page edge and the panel edge
@@ -16,6 +17,13 @@ const MAT = 40; // breathing room between the page edge and the panel edge
  * than the stage on a 1120px window, so the page ran under the panel edge and
  * had to be scrolled sideways to read. Any manual zoom takes over; the
  * percentage button hands control back to fit.
+ *
+ * With `editing`, a click on a paragraph edits it on the page:
+ *   key          changes when the letter being edited changes, ending an edit
+ *   sourceFor    (origin) -> the markup of the template blocks a paragraph came from
+ *   commit       (origin, markup) -> keep the edited markup
+ *   chips        what fields show while editing (see editor/chips)
+ *   fieldMenu    { existing, defs, library, onInsert } for the Insert field menu
  */
 export function LetterPreview({
   pages,
@@ -26,8 +34,36 @@ export function LetterPreview({
   subject,
   letterDate,
   onToggleLetterhead,
+  editing = null,
 }) {
   const stageRef = useRef(null);
+  // { origin, markup, point } while a paragraph is open for editing.
+  const [active, setActive] = useState(null);
+  const [toolbarSlot, setToolbarSlot] = useState(null);
+
+  useEffect(() => setActive(null), [editing?.key]);
+  if (active && !editing) setActive(null);
+
+  const edit = editing && {
+    active: active?.origin,
+    onStart: (origin, point) => setActive({ origin, markup: editing.sourceFor(origin), point }),
+    renderEditor: () => (
+      <PageBlockEditor
+        key={`${active.origin.from}-${active.origin.to}`}
+        markup={active.markup}
+        point={active.point}
+        toolbarSlot={toolbarSlot}
+        chips={editing.chips}
+        fieldMenu={editing.fieldMenu}
+        paragraphSpacing={letterhead.paragraphSpacing}
+        onDone={(markup) => {
+          setActive(null);
+          if (markup !== active.markup) editing.commit(active.origin, markup);
+        }}
+        onCancel={() => setActive(null)}
+      />
+    ),
+  };
   const [fitZoom, setFitZoom] = useState(0.8);
   const [manualZoom, setManualZoom] = useState(null);
   const [showMarginGuides, setShowMarginGuides] = useState(false);
@@ -88,6 +124,13 @@ export function LetterPreview({
 
         <div className="flex-1" />
 
+        {editing && !active && (
+          <span className="hidden xl:flex items-center gap-1.5 px-2 whitespace-nowrap text-ink-faint">
+            <MousePointerClick className="w-3.5 h-3.5" />
+            Click the letter to edit it
+          </span>
+        )}
+
         <span className="flex items-center gap-1.5 px-2 tabular-nums whitespace-nowrap text-ink-muted">
           <FileText className="w-3.5 h-3.5" />
           {pages.length || '—'} {pages.length === 1 ? 'page' : 'pages'}
@@ -126,6 +169,12 @@ export function LetterPreview({
         </div>
       </div>
 
+      {/* Formatting, while a paragraph is open on the page. */}
+      <div
+        ref={setToolbarSlot}
+        className={`shrink-0 border-b px-3 py-1.5 bg-surface-raised border-line ${active ? '' : 'hidden'}`}
+      />
+
       {/* Stage */}
       <div ref={stageRef} className="flex-1 overflow-auto min-h-0">
         <div
@@ -158,6 +207,7 @@ export function LetterPreview({
                 subject={subject}
                 letterDate={letterDate}
                 showMarginGuides={showMarginGuides}
+                edit={edit}
               />
             )}
           </div>

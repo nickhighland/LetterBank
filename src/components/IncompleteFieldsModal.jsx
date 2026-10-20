@@ -12,7 +12,7 @@ import { Modal, Button } from './ui';
  * names the empty fields and makes continuing a deliberate choice rather than
  * an accident.
  */
-export function IncompleteFieldsModal({ pending, fields, onFill, onContinue, onClose }) {
+export function IncompleteFieldsModal({ pending, fields, labels = {}, onFill, onContinue, onClose }) {
   const count = fields.length;
 
   return (
@@ -43,7 +43,7 @@ export function IncompleteFieldsModal({ pending, fields, onFill, onContinue, onC
               className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-warning-soft"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-warning shrink-0" />
-              <span className="text-[13px] font-medium text-ink">{formatLabel(name)}</span>
+              <span className="text-[13px] font-medium text-ink">{labels[name] || formatLabel(name)}</span>
               <code className="ml-auto text-[11px] font-mono text-ink-muted">
                 {`{{${name}}}`}
               </code>

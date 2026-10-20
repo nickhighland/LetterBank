@@ -414,6 +414,195 @@ body {
 }
 
 /* --------------------------------------------------------------------------
+   LETTER EDITOR
+   The rich text editor in the Editor pane, and the same editor opened on a
+   paragraph of the page in the preview. On the page it follows the paper
+   rules above: literal colours, no theme tokens.
+   -------------------------------------------------------------------------- */
+.lb-editor {
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.lb-editor ul {
+  list-style: disc outside;
+}
+
+.lb-editor ol {
+  list-style: decimal outside;
+}
+
+.lb-editor li {
+  margin-bottom: 0.25em;
+}
+
+.lb-editor li > p {
+  margin: 0;
+}
+
+.lb-editor .ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+/* The Editor pane: a sheet of paper in miniature. */
+.lb-pane-editor {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+  min-height: 340px;
+  padding: 14px 16px;
+}
+
+.lb-pane-editor p,
+.lb-pane-editor ul,
+.lb-pane-editor ol {
+  margin: 0 0 0.85em;
+}
+
+.lb-pane-editor ul,
+.lb-pane-editor ol {
+  padding-left: 24px;
+}
+
+.lb-chip {
+  display: inline-block;
+  padding: 0 0.3em;
+  border-radius: 4px;
+  line-height: 1.35;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: default;
+  user-select: none;
+}
+
+.lb-chip-field {
+  font-size: 0.92em;
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.lb-chip-condition {
+  font-family: var(--font-sans);
+  font-size: 0.74em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.lb-chip-condition.is-end {
+  background: var(--surface-sunken);
+  color: var(--ink-muted);
+}
+
+.lb-chip.is-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.lb-page-break {
+  position: relative;
+  height: 0;
+  margin: 1.1em 0 1.3em;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.lb-page-break::after {
+  content: 'Page break';
+  position: absolute;
+  top: -0.75em;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 0.6em;
+  font: 600 9.5px/1.5 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  background: var(--surface-base);
+}
+
+/* On the page: a paragraph that can be clicked to edit it. */
+.letter-block-editable {
+  cursor: text;
+  border-radius: 2px;
+  transition: background-color 120ms;
+}
+
+.letter-block-editable:hover {
+  background-color: rgba(3, 105, 161, 0.06);
+  box-shadow: 0 0 0 3px rgba(3, 105, 161, 0.06);
+}
+
+/* The editor open on the page. It may run past the page's edge while typing;
+   the page repaginates when editing finishes. */
+.letter-page-canvas:has(.lb-page-editor),
+.letter-content-boundary:has(.lb-page-editor) {
+  overflow: visible;
+}
+
+.letter-page-canvas:has(.lb-page-editor) {
+  z-index: 1;
+}
+
+.lb-page-editor {
+  position: relative;
+  z-index: 3;
+  padding: 4px 6px;
+  border-radius: 3px;
+  background: #ffffff;
+  box-shadow: 0 0 0 1.5px #0369a1, 0 4px 18px -6px rgba(3, 105, 161, 0.35);
+}
+
+.lb-page-editor .lb-editor > p,
+.lb-page-editor .lb-editor > ul,
+.lb-page-editor .lb-editor > ol {
+  margin: 0 0 var(--lb-paragraph-space, 0.9em);
+}
+
+.lb-page-editor .lb-editor > :last-child {
+  margin-bottom: 0;
+}
+
+.lb-page-editor .lb-chip-field {
+  display: inline;
+  white-space: pre-wrap;
+  font-size: inherit;
+  padding: 0 1px;
+  margin: 0;
+  border-radius: 2px;
+  color: inherit;
+  background: rgba(3, 105, 161, 0.1);
+  box-shadow: inset 0 -1px 0 rgba(3, 105, 161, 0.55);
+}
+
+.lb-page-editor .lb-chip-field.is-empty {
+  color: #0369a1;
+}
+
+.lb-page-editor .lb-chip-condition {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.lb-page-editor .lb-chip-condition.is-end {
+  background: #eef0f3;
+  color: #697079;
+}
+
+.lb-page-editor .lb-page-break {
+  border-color: #979da6;
+}
+
+.lb-page-editor .lb-page-break::after {
+  color: #697079;
+  background: #ffffff;
+}
+
+/* --------------------------------------------------------------------------
    PRINT / PDF
    Strategy: the print document is rendered into #print-root, a direct child
    of <body>. Everything else is hidden by a single structural rule, so the

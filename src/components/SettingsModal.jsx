@@ -13,6 +13,7 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  Braces,
 } from 'lucide-react';
 import {
   DEFAULT_PRESETS,
@@ -21,9 +22,13 @@ import {
   DEFAULT_CLINICIAN,
 } from '../utils/storage';
 import { DATE_FORMATS } from '../utils/variableParser';
+import { importImageFile, importImageDataUrl } from '../utils/persist';
 import { fillableArea, pxToInches, inchesToPx } from '../constants/page';
 import { Modal, Button, Field, TextInput, SegmentedControl } from './ui';
 import { resolveSignatureTokens } from './LetterDocument';
+import { FieldLibraryPanel } from './FieldLibraryPanel';
+import { normaliseFieldLibrary } from '../utils/fieldDefs';
+import { marginHidesWindow } from '../utils/recipient';
 
 // ---- Letterhead Constants ----
 const MARGIN_PRESETS = [
@@ -219,6 +224,9 @@ export function SettingsModal({
   onSaveSignature,
   clinician,
   onSaveClinician,
+  fieldLibrary = [],
+  onSaveFieldLibrary,
+  onNotify,
 }) {
   // Main settings tab: 'presets' | 'letterhead' | 'signature'
   const [mainTab, setMainTab] = useState(initialTab);
@@ -232,6 +240,8 @@ export function SettingsModal({
   const [currentLh, setCurrentLh] = useState(letterhead);
   const [currentSig, setCurrentSig] = useState(signature);
   const [currentClin, setCurrentClin] = useState(clinician);
+  const [currentFields, setCurrentFields] = useState(fieldLibrary);
+  const [selectedField, setSelectedField] = useState(null);
 
   // Presets custom fields state
   const [customKey, setCustomKey] = useState('');
@@ -245,7 +255,12 @@ export function SettingsModal({
       setCurrentLh({ ...DEFAULT_LETTERHEAD, ...letterhead });
       setCurrentSig(signature || DEFAULT_SIGNATURE);
       setCurrentClin(clinician || DEFAULT_CLINICIAN);
+      setCurrentFields(fieldLibrary);
+      setSelectedField(null);
     }
+    // fieldLibrary is read when the dialog opens; saving it here would reset
+    // the field being edited.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialTab, presets, letterhead, signature, clinician]);
 
   const setLh = (patch) => setCurrentLh((prev) => ({ ...prev, ...patch }));
@@ -253,13 +268,24 @@ export function SettingsModal({
   const setPresetField = (key, val) =>
     setCurrentPresets((prev) => ({ ...prev, [key]: val }));
 
+  /**
+   * Images are kept exactly as chosen — no downscaling — and on the desktop
+   * they are written to the data folder straight away, at full size.
+   */
+  const importImage = async (source, apply) => {
+    try {
+      const url =
+        typeof source === 'string' ? await importImageDataUrl(source) : await importImageFile(source);
+      if (url) apply(url);
+    } catch (err) {
+      onNotify?.(`Couldn't use that image: ${err?.message || err}`, 'error');
+    }
+  };
+
   const handleLetterheadUpload = (e) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => ev.target?.result && setLh({ url: ev.target.result });
-    reader.readAsDataURL(file);
     e.target.value = '';
+    if (file) importImage(file, (url) => setLh({ url }));
   };
 
   const addCustomPreset = () => {
@@ -307,6 +333,7 @@ export function SettingsModal({
     onSaveLetterhead(currentLh);
     onSaveSignature(currentSig);
     onSaveClinician(currentClin);
+    onSaveFieldLibrary?.(normaliseFieldLibrary(currentFields));
     onApplyPresetsToCurrentLetter?.(currentPresets);
     onClose();
   };
@@ -323,15 +350,19 @@ export function SettingsModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Settings & Defaults"
-      subtitle="Configure practice presets, letterhead layout, and digital signatures."
+      subtitle="Configure practice presets, letterhead layout, digital signatures and your own fields."
       icon={Sliders}
       width="max-w-3xl"
       footer={
         <>
-          <Button variant="ghost" onClick={handleResetCurrentTab} className="mr-auto">
-            <RotateCcw className="w-3.5 h-3.5" />
-            Reset {mainTab === 'presets' ? 'presets' : mainTab === 'letterhead' ? 'letterhead' : 'signature'}
-          </Button>
+          {mainTab === 'fields' ? (
+            <span className="mr-auto" />
+          ) : (
+            <Button variant="ghost" onClick={handleResetCurrentTab} className="mr-auto">
+              <RotateCcw className="w-3.5 h-3.5" />
+              Reset {mainTab === 'presets' ? 'presets' : mainTab === 'letterhead' ? 'letterhead' : 'signature'}
+            </Button>
+          )}
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
@@ -350,11 +381,22 @@ export function SettingsModal({
             { value: 'presets', label: 'Presets', Icon: Bookmark },
             { value: 'letterhead', label: 'Letterhead', Icon: ImageIcon },
             { value: 'signature', label: 'Signature', Icon: PenTool },
+            { value: 'fields', label: 'My fields', Icon: Braces },
           ]}
         />
       </div>
 
       <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+        {mainTab === 'fields' && (
+          <FieldLibraryPanel
+            fields={currentFields}
+            onChange={setCurrentFields}
+            selected={selectedField}
+            onSelect={setSelectedField}
+            savedNames={fieldLibrary.map((f) => f.name)}
+          />
+        )}
+
         {/* ======================= TAB 1: PRESETS ======================= */}
         {mainTab === 'presets' && (
           <div className="space-y-6">
@@ -544,7 +586,7 @@ export function SettingsModal({
               options={[
                 { value: 'page', label: 'Page & Margins' },
                 { value: 'type', label: 'Typography' },
-                { value: 'furniture', label: 'Date & Numbering' },
+                { value: 'furniture', label: 'Date, Address & Numbering' },
               ]}
             />
 
@@ -757,6 +799,25 @@ export function SettingsModal({
                 </Toggle>
 
                 <Toggle
+                  checked={currentLh.recipientLayout === 'window'}
+                  onChange={(v) => setLh({ recipientLayout: v ? 'window' : 'standard' })}
+                  label="Place addresses for a #10 window envelope"
+                  hint="For letters with a recipient address (set in the Editor). Off, the address prints above the letter."
+                >
+                  <p className="pt-3 text-[12px] leading-relaxed text-ink-secondary">
+                    The address prints 2¼″ from the top and about 1″ from the left, where the window shows it
+                    when the letter is folded in three. Four lines fit, at up to 12 pt; the letter starts below
+                    the window.
+                  </p>
+                  {marginHidesWindow(currentLh) && (
+                    <p className="text-[12px] leading-relaxed text-warning">
+                      Your top margin ({pxToInches(currentLh.topMargin)}″) starts below the window, so the
+                      address will print over the top of the page.
+                    </p>
+                  )}
+                </Toggle>
+
+                <Toggle
                   checked={currentLh.showContinuationHeader}
                   onChange={(v) => setLh({ showContinuationHeader: v })}
                   label="Continuation header on page 2 and beyond"
@@ -905,19 +966,15 @@ export function SettingsModal({
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (!file) return;
-                          const reader = new FileReader();
-                          reader.onload = (ev) =>
-                            ev.target?.result && setSigField({ url: ev.target.result });
-                          reader.readAsDataURL(file);
                           e.target.value = '';
+                          if (file) importImage(file, (url) => setSigField({ url }));
                         }}
                       />
                     </label>
                   </Field>
 
                   <Field label="Or draw your signature">
-                    <SignaturePad onCommit={(url) => setSigField({ url })} />
+                    <SignaturePad onCommit={(dataUrl) => importImage(dataUrl, (url) => setSigField({ url }))} />
                   </Field>
                 </div>
 

@@ -19,12 +19,20 @@
       // Apply the saved theme before first paint so the app never flashes the
       // wrong palette on launch.
       try {
-        document.documentElement.setAttribute(
-          'data-theme',
-          localStorage.getItem('letterbank_theme_v2') ||
-            localStorage.getItem('carevault_theme_v2') ||
-            'light'
-        );
+        var api = window.electronAPI;
+        var saved = api && api.initialTheme;
+        if (!saved) {
+          saved =
+            localStorage.getItem('letterbank_theme_v2') ||
+            localStorage.getItem('carevault_theme_v2');
+        }
+        var theme = saved || 'system';
+        if (theme === 'system') {
+          theme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+        }
+        document.documentElement.setAttribute('data-theme', theme);
       } catch (e) {
         document.documentElement.setAttribute('data-theme', 'light');
       }

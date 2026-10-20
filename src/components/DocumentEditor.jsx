@@ -1,90 +1,152 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Save, Copy, RotateCcw, Braces } from 'lucide-react';
-import { extractVariables, fieldTypeMap, inferFieldType, formatLabel } from '../utils/variableParser';
-import { TEMPLATE_CATEGORIES } from '../data/defaultTemplates';
-import { Button, TextInput, Field, Badge } from './ui';
-import { FormatToolbar } from './FormatToolbar';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Save, Copy, RotateCcw, Plus } from 'lucide-react';
+import { EditorContent } from '@tiptap/react';
+import { formatLabel } from '../utils/variableParser';
+import { allLetterFields, resolveFieldDefs, withFieldDef } from '../utils/fieldDefs';
+import { isPronounToken } from '../utils/pronouns';
+import { FieldSettingsModal } from './FieldSettingsModal';
+import { TYPE_ICONS } from './FieldForm';
+import { Button, TextInput, Field } from './ui';
 import { MarkupHelpModal } from './MarkupHelpModal';
 import { FieldMenu } from './FieldMenu';
+import { useLetterEditor } from '../editor/useLetterEditor';
+import { LetterToolbar } from '../editor/LetterToolbar';
+import { ChipContext } from '../editor/chips';
+import { insertField as insertFieldInEditor, wrapOptional } from '../editor/commands';
 
-const draftFrom = (template) => ({
-  title: template?.title || '',
-  category: template?.category || 'General',
-  subject: template?.subject || '',
-  body: template?.body || '',
-  description: template?.description || '',
-  fields: template?.fields || [],
-});
+/**
+ * The draft lives in App (see utils/templateDraft), not here. When it lived
+ * here, switching to Quick Fill unmounted the editor and threw unsaved edits
+ * away without asking, and the preview never showed them until Save.
+ */
+const SAVE_KEYS = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? '⌘S' : 'Ctrl+S';
 
-export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
-  const [draft, setDraft] = useState(() => draftFrom(template));
-  const bodyRef = useRef(null);
+/** Starting points for a letter's recipient address. */
+const ADDRESSES = [
+  { label: 'Client’s address', text: '{{client_name}}\n{{client_address}}' },
+  {
+    label: 'Someone else’s',
+    text: '{{recipient_name}}\n{{recipient_organization}}\n{{recipient_address}}',
+  },
+];
+
+/** How a placeholder reads in the editor: its field's label, or the pronoun it stands for. */
+const chipText = (name, defs) =>
+  isPronounToken(name) ? name.replace(/_/g, ' ') : defs[name]?.label || formatLabel(name);
+
+export function DocumentEditor({
+  template,
+  draft,
+  isDirty,
+  onChangeDraft,
+  onSaveTemplate,
+  onSaveAsNew,
+  onDiscard,
+  fieldLibrary = [],
+  onSaveLibraryField,
+  categories = [],
+}) {
   const [showHelp, setShowHelp] = useState(false);
 
   const subjectRef = useRef(null);
-  // { x, y, target: 'body' | 'subject' } while the Insert field menu is open.
+  const recipientRef = useRef(null);
+  // { x, y, target: 'body' | 'subject' | 'recipient', optional? } while the Insert field menu is open.
   const [fieldMenu, setFieldMenu] = useState(null);
+  const [editingField, setEditingField] = useState(null);
 
   useEffect(() => {
-    if (!template) return;
-    setDraft(draftFrom(template));
     setFieldMenu(null);
   }, [template?.id]);
 
-  const set = (patch) => setDraft((prev) => ({ ...prev, ...patch }));
+  const set = (patch) => onChangeDraft((prev) => ({ ...prev, ...patch }));
+  const setDraft = onChangeDraft;
 
-  const variables = extractVariables(`${draft.subject} ${draft.body}`);
+  const editor = useLetterEditor({
+    markup: draft.body,
+    onChange: (body) => set({ body }),
+    onContextMenu: (e) => setFieldMenu({ x: e.clientX, y: e.clientY, target: 'body' }),
+    editorClass: 'lb-pane-editor',
+  });
 
-  const isDirty =
-    template &&
-    (draft.title !== (template.title || '') ||
-      draft.category !== (template.category || 'General') ||
-      draft.subject !== (template.subject || '') ||
-      draft.body !== (template.body || '') ||
-      draft.description !== (template.description || '') ||
-      JSON.stringify(draft.fields) !== JSON.stringify(template.fields || []));
+  const letterText = `${draft.recipient || ''}\n\n${draft.body}\n\n${draft.subject}`;
+  const variables = allLetterFields(letterText);
+  const defs = resolveFieldDefs(variables, {
+    text: letterText,
+    library: fieldLibrary,
+    templateFields: draft.fields,
+  });
+
+  /** Keep a field's definition on the letter (or drop it when a guess would do). */
+  const recordField = (def) =>
+    setDraft((prev) => {
+      const fields = withFieldDef(prev.fields, def);
+      return fields === prev.fields ? prev : { ...prev, fields };
+    });
 
   /** Insert at the caret, not blindly at the end. */
   const insertVariable = (name, target = 'body') => {
+    if (target === 'body') {
+      insertFieldInEditor(editor, name);
+      return;
+    }
     const token = `{{${name}}}`;
-    const el = target === 'subject' ? subjectRef.current : bodyRef.current;
+    const el = (target === 'recipient' ? recipientRef : subjectRef).current;
     setDraft((prev) => {
-      const text = prev[target];
+      const text = prev[target] || '';
       if (!el) return { ...prev, [target]: `${text}${token}` };
       const start = el.selectionStart ?? text.length;
       const end = el.selectionEnd ?? text.length;
-      const next = text.slice(0, start) + token + text.slice(end);
       requestAnimationFrame(() => {
         el.focus();
         el.setSelectionRange(start + token.length, start + token.length);
       });
-      return { ...prev, [target]: next };
+      return { ...prev, [target]: text.slice(0, start) + token + text.slice(end) };
     });
   };
 
   /**
-   * Insert from the field menu. A type that differs from what the name alone
-   * would suggest is recorded on the template, so Quick Fill offers the right
-   * picker — "return_to_work" picked as a Date gets a date picker.
+   * Insert from the field menu. The field's definition is kept on the letter
+   * when a guess from its name would get it wrong ("return_to_work" picked as
+   * a Date), and as a copy when it comes from My fields, so the letter still
+   * works if that field is later deleted.
    */
-  const insertField = (name, type) => {
+  const insertField = (def, { saveToLibrary = false, pronoun = false } = {}) => {
     const target = fieldMenu?.target || 'body';
     setFieldMenu(null);
-    setDraft((prev) => {
-      const known = prev.fields.find((f) => f.name === name);
-      if (known ? known.type === type : inferFieldType(name) === type) return prev;
-      const fields = known
-        ? prev.fields.map((f) => (f.name === name ? { ...f, type } : f))
-        : [...prev.fields, { name, label: formatLabel(name), type, defaultValue: '' }];
-      return { ...prev, fields };
-    });
-    insertVariable(name, target);
+    if (!pronoun) {
+      if (saveToLibrary) onSaveLibraryField?.(def);
+      recordField(def);
+    }
+    insertVariable(def.name, target);
+  };
+
+  /** Wrap the selection in [[if name]] … [[end]], so it prints only when ticked. */
+  const makeOptional = (name) => {
+    setFieldMenu(null);
+    wrapOptional(editor, name);
+  };
+
+  /** Saved from the field settings dialog. */
+  const saveFieldSettings = (def, { inLibrary, saveToLibrary }) => {
+    setEditingField(null);
+    if (inLibrary || saveToLibrary) onSaveLibraryField?.(def);
+    if (!inLibrary) recordField(def);
   };
 
   const openFieldMenu = (target) => (e) => {
     e.preventDefault();
     setFieldMenu({ x: e.clientX, y: e.clientY, target });
   };
+
+  const chips = useMemo(
+    () => ({
+      field: (name) => ({ text: chipText(name, defs), title: `{{${name}}}` }),
+      label: (name) => defs[name]?.label || formatLabel(name),
+      onOpenField: (name) => defs[name] && !isPronounToken(name) && setEditingField(defs[name]),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [JSON.stringify(defs)]
+  );
 
   return (
     <div
@@ -107,16 +169,16 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
         <div className="grid grid-cols-2 gap-4">
           <Field label="Category">
             <TextInput
-              as="select"
               value={draft.category}
               onChange={(e) => set({ category: e.target.value })}
-            >
-              {TEMPLATE_CATEGORIES.filter((c) => c !== 'All').map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
+              list="letter-categories"
+              title="Choose a category or type a new one"
+            />
+            <datalist id="letter-categories">
+              {categories.map((c) => (
+                <option key={c} value={c} />
               ))}
-            </TextInput>
+            </datalist>
           </Field>
           <Field label="Subject">
             <TextInput
@@ -128,6 +190,47 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
           </Field>
         </div>
 
+        <Field
+          label="Recipient address"
+          hint={
+            draft.recipient
+              ? 'Printed on page 1, above the letter or in a window envelope (Settings › Letterhead). Right-click to insert a field.'
+              : 'For letters that are mailed. Leave it off for the rest.'
+          }
+          action={
+            draft.recipient ? (
+              <button
+                type="button"
+                onClick={() => set({ recipient: '' })}
+                className="text-[11px] font-medium cursor-pointer text-ink-muted hover:text-danger"
+              >
+                Remove
+              </button>
+            ) : null
+          }
+        >
+          {draft.recipient ? (
+            <TextInput
+              as="textarea"
+              rows={3}
+              ref={recipientRef}
+              aria-label="Recipient address"
+              value={draft.recipient}
+              onChange={(e) => set({ recipient: e.target.value })}
+              onContextMenu={openFieldMenu('recipient')}
+            />
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {ADDRESSES.map(({ label, text }) => (
+                <Button key={label} onClick={() => set({ recipient: text })} className="!h-8 !px-3 !text-[12px]">
+                  <Plus className="w-3.5 h-3.5" />
+                  {label}
+                </Button>
+              ))}
+            </div>
+          )}
+        </Field>
+
         <Field label="Description">
           <TextInput
             value={draft.description}
@@ -136,40 +239,22 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
         </Field>
 
         <Field
-          label="Body"
-          hint="Right-click to insert a field. Formatting applies to the selected lines. ---pagebreak--- forces a new page."
-          action={
-            <span className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={(e) => {
-                  const r = e.currentTarget.getBoundingClientRect();
-                  setFieldMenu({ x: r.left, y: r.bottom + 4, target: 'body' });
-                }}
-                title="Insert a fillable field at the cursor"
-                className="flex items-center gap-1 h-7 px-2 rounded-md text-[12px] font-medium cursor-pointer
-                           text-ink-secondary hover:bg-surface-hover"
-              >
-                <Braces className="w-3.5 h-3.5" />
-                Field
-              </button>
-              <FormatToolbar
-                targetRef={bodyRef}
-                onChange={(body) => set({ body })}
-                onShowHelp={() => setShowHelp(true)}
-              />
-            </span>
-          }
+          label="Letter"
+          hint="Right-click to insert a field. Return starts a new paragraph; Shift-Return a new line."
         >
-          <TextInput
-            as="textarea"
-            ref={bodyRef}
-            rows={18}
-            value={draft.body}
-            onChange={(e) => set({ body: e.target.value })}
-            onContextMenu={openFieldMenu('body')}
-            className="font-serif !text-[13px] leading-relaxed"
-          />
+          <div className="rounded-lg border border-line bg-surface-base focus-within:border-accent">
+            <div className="sticky top-0 z-10 px-1.5 py-1 border-b rounded-t-lg border-line bg-surface-raised">
+              <LetterToolbar
+                editor={editor}
+                onField={(r) => setFieldMenu({ x: r.left, y: r.bottom + 4, target: 'body' })}
+                onOptional={(r) => setFieldMenu({ x: r.left, y: r.bottom + 4, target: 'body', optional: true })}
+                onHelp={() => setShowHelp(true)}
+              />
+            </div>
+            <ChipContext.Provider value={chips}>
+              <EditorContent editor={editor} className="select-text" />
+            </ChipContext.Provider>
+          </div>
         </Field>
 
         {variables.length > 0 && (
@@ -178,17 +263,23 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
               {variables.length} field{variables.length === 1 ? '' : 's'} in this letter
             </span>
             <div className="flex flex-wrap gap-1">
-              {variables.map((v) => (
-                <button
-                  key={v}
-                  onClick={() => insertVariable(v)}
-                  title={`Insert {{${v}}} at the cursor`}
-                  className="cursor-pointer"
-                >
-                  <Badge tone="accent">{v}</Badge>
-                </button>
-              ))}
+              {variables.map((v) => {
+                const Icon = TYPE_ICONS[defs[v]?.type] || TYPE_ICONS.text;
+                return (
+                  <button
+                    key={v}
+                    onClick={() => v !== 'pronouns' && setEditingField(defs[v])}
+                    title={v === 'pronouns' ? 'Pronouns are chosen in Quick Fill' : `Field settings for {{${v}}}`}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11.5px] font-medium cursor-pointer
+                               bg-accent-soft text-accent-ink hover:brightness-95"
+                  >
+                    <Icon className="w-3 h-3" />
+                    {defs[v]?.label || v}
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-[11px] text-ink-faint">Click a field to change its label, type or choices.</p>
           </div>
         )}
       </div>
@@ -196,9 +287,10 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
       <div className="px-4 py-3.5 border-t shrink-0 flex items-center gap-2 border-line">
         <Button
           variant="ghost"
-          onClick={() => setDraft(draftFrom(template))}
+          onClick={onDiscard}
           disabled={!isDirty}
-          title="Discard changes"
+          title="Discard unsaved changes"
+          aria-label="Discard unsaved changes"
         >
           <RotateCcw className="w-3.5 h-3.5" />
         </Button>
@@ -223,6 +315,7 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
           variant="primary"
           onClick={() => onSaveTemplate({ ...template, ...draft })}
           disabled={!isDirty}
+          title={`Save (${SAVE_KEYS})`}
           className="flex-1"
         >
           <Save className="w-3.5 h-3.5" />
@@ -232,12 +325,21 @@ export function DocumentEditor({ template, onSaveTemplate, onSaveAsNew }) {
 
       <MarkupHelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
 
+      <FieldSettingsModal
+        field={editingField}
+        onClose={() => setEditingField(null)}
+        onSave={saveFieldSettings}
+      />
+
       {fieldMenu && (
         <FieldMenu
           position={fieldMenu}
           existing={variables}
-          types={fieldTypeMap(draft.fields)}
+          defs={defs}
+          library={fieldLibrary}
           onInsert={insertField}
+          onOptional={fieldMenu.target === 'body' ? makeOptional : undefined}
+          startOptional={Boolean(fieldMenu.optional)}
           onClose={() => setFieldMenu(null)}
         />
       )}

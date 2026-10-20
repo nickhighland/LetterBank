@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
+import Papa from 'papaparse';
 
 /**
  * Export pipeline — 100% local, no network, no rasterisation.
@@ -103,8 +103,35 @@ export async function printStaged() {
 }
 
 /**
- * Batch: caller stages each record in turn via `stageRecord(index)`, which must
- * resolve once that record's pages are committed to #print-root.
+ * A spreadsheet cell that can't run as a formula when the summary is opened
+ * in Excel or Numbers: a client name from a CSV could start with "=".
+ */
+const safeCell = (value) => {
+  const text = String(value ?? '');
+  return /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+};
+
+/**
+ * The summary that goes in a batch archive: one row per letter, with its
+ * file names and any fields that printed as placeholders.
+ */
+export function batchSummaryCsv(rows) {
+  return Papa.unparse({
+    fields: ['Row', 'Client', 'Files', 'Empty fields'],
+    data: rows.map((r) => [r.row, safeCell(r.client), safeCell(r.files.join('; ')), safeCell(r.missing.join('; '))]),
+  });
+}
+
+/**
+ * Batch: one letter per record, as PDF, Word or both, in one ZIP, with an
+ * optional summary.csv listing every letter.
+ *
+ * For PDF the caller stages each record in turn via `stageRecord(record)`,
+ * which must resolve once that record's pages are committed to #print-root.
+ * For Word, `buildRecordDocx(record)` returns the .docx bytes. Both are given
+ * the record itself, never an index, so the letter and its file name always
+ * come from the same row. `missingFor(index)` names the fields left empty in
+ * that row, for the summary.
  *
  * Desktop only — the browser cannot produce PDF bytes without a print dialog
  * per document, so the web build offers per-record export instead.
@@ -112,7 +139,11 @@ export async function printStaged() {
 export async function batchExportZip({
   records,
   templateTitle,
+  formats = { pdf: true, docx: false },
+  summary = false,
   stageRecord,
+  buildRecordDocx,
+  missingFor = () => [],
   onProgress,
 }) {
   if (!isDesktop()) {
@@ -126,27 +157,38 @@ export async function batchExportZip({
   const folder = zip.folder('LetterBank_Batch_Letters');
   const total = records.length;
   const usedNames = new Map();
+  const rows = [];
 
   for (let i = 0; i < total; i++) {
-    onProgress?.(i + 1, total, `Rendering letter ${i + 1} of ${total}…`);
+    onProgress?.(i + 1, total, `Writing letter ${i + 1} of ${total}…`);
 
-    await stageRecord(i);
-    await waitForStageReady();
-
-    const bytes = await window.electronAPI.renderPdf();
-
-    const base = `${sanitizeFilename(
-      records[i].values?.client_name,
-      `Record_${i + 1}`
-    )}_${sanitizeFilename(templateTitle, 'Letter')}`;
+    const client = records[i].values?.client_name || '';
+    const base = `${sanitizeFilename(client, `Record_${i + 1}`)}_${sanitizeFilename(
+      templateTitle,
+      'Letter'
+    )}`;
 
     // Two clients with the same name must not overwrite each other.
     const seen = usedNames.get(base) || 0;
     usedNames.set(base, seen + 1);
-    const filename = seen === 0 ? `${base}.pdf` : `${base}_${seen + 1}.pdf`;
+    const name = seen === 0 ? base : `${base}_${seen + 1}`;
+    const files = [];
 
-    folder.file(filename, bytes);
+    if (formats.pdf) {
+      await stageRecord(records[i]);
+      await waitForStageReady();
+      folder.file(`${name}.pdf`, await window.electronAPI.renderPdf());
+      files.push(`${name}.pdf`);
+    }
+    if (formats.docx) {
+      folder.file(`${name}.docx`, await buildRecordDocx(records[i]));
+      files.push(`${name}.docx`);
+    }
+
+    rows.push({ row: records[i]._rowIndex ?? i + 1, client, files, missing: missingFor(i) });
   }
+
+  if (summary) folder.file('summary.csv', batchSummaryCsv(rows));
 
   onProgress?.(total, total, 'Compressing archive…');
 
@@ -154,15 +196,12 @@ export async function batchExportZip({
     .toISOString()
     .slice(0, 10)}.zip`;
 
-  const blob = await zip.generateAsync({ type: 'blob' });
-  const buffer = await blob.arrayBuffer();
+  // Bytes, not a Blob: Chromium can page large blobs out to disk, and this
+  // archive is full of client letters.
+  const buffer = await zip.generateAsync({ type: 'uint8array' });
 
-  const result = await window.electronAPI.saveZip(zipName, new Uint8Array(buffer));
-  if (!result.saved) {
-    // User cancelled the native dialog — fall back to a normal download so the
-    // work isn't thrown away.
-    saveAs(blob, zipName);
-  }
-
-  return result;
+  // A cancelled Save dialog means "don't save". It used to fall back to a
+  // silent download, which left a ZIP of client letters in Downloads that the
+  // clinician had just declined to keep.
+  return window.electronAPI.saveZip(zipName, buffer);
 }

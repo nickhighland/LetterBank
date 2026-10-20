@@ -1,5 +1,7 @@
 const { app, shell, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
+const { execFile } = require('child_process');
+const path = require('path');
 
 /**
  * Update checking against the GitHub releases feed.
@@ -13,12 +15,11 @@ const { autoUpdater } = require('electron-updater');
  * download would fetch ~100MB and then fail at the install step with nothing to
  * show for it.
  *
- * So: compare versions, tell the renderer, and send the clinician to the
- * release page to download. When a Developer ID is available, set
- * AUTO_DOWNLOAD to true and wire `quitAndInstall` to the renderer's prompt —
- * the feed and the version comparison already work.
+ * So an unsigned build compares versions, tells the renderer, and sends the
+ * clinician to the release page to download. A build signed with a Developer
+ * ID (see SIGNING.md) is detected at launch and updates itself instead: it
+ * downloads in the background and offers "Restart to update".
  */
-const AUTO_DOWNLOAD = false;
 const RELEASES_URL = 'https://github.com/nickhighland/LetterBank/releases/latest';
 
 // Check shortly after launch so it never competes with first paint, then daily
@@ -26,9 +27,22 @@ const RELEASES_URL = 'https://github.com/nickhighland/LetterBank/releases/latest
 const INITIAL_DELAY_MS = 8000;
 const REPEAT_MS = 24 * 60 * 60 * 1000;
 
+/** True when this copy of the app is signed with a Developer ID. */
+function isDeveloperIdSigned() {
+  if (process.platform !== 'darwin' || !app.isPackaged) return Promise.resolve(false);
+  // .../LetterBank.app/Contents/MacOS/LetterBank -> .../LetterBank.app
+  const bundle = path.resolve(process.execPath, '..', '..', '..');
+  return new Promise((resolve) => {
+    execFile('/usr/bin/codesign', ['-dv', '--verbose=2', bundle], (err, _out, details) => {
+      resolve(!err && /Authority=Developer ID Application/.test(String(details)));
+    });
+  });
+}
+
 function registerUpdater(getWindow) {
-  autoUpdater.autoDownload = AUTO_DOWNLOAD;
-  autoUpdater.autoInstallOnAppQuit = AUTO_DOWNLOAD;
+  let canAutoInstall = false;
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.allowPrerelease = false;
 
   const send = (channel, payload) => {
@@ -36,14 +50,21 @@ function registerUpdater(getWindow) {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   };
 
-  autoUpdater.on('update-available', (info) => {
+  const announce = (info) =>
     send('update:available', {
       version: info.version,
       currentVersion: app.getVersion(),
       releaseDate: info.releaseDate,
       url: RELEASES_URL,
-      canAutoInstall: AUTO_DOWNLOAD,
+      canAutoInstall,
     });
+
+  // A signed build says nothing until the update is downloaded and ready.
+  autoUpdater.on('update-available', (info) => {
+    if (!canAutoInstall) announce(info);
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    if (canAutoInstall) announce(info);
   });
 
   autoUpdater.on('update-not-available', () => {
@@ -75,8 +96,21 @@ function registerUpdater(getWindow) {
     return { opened: true };
   });
 
+  // Closing asks about unsaved changes and clears client details as usual
+  // (see main.js and privacy.cjs) before the new version starts.
+  ipcMain.handle('update:install', () => {
+    if (canAutoInstall) autoUpdater.quitAndInstall();
+    return { installing: canAutoInstall };
+  });
+
   // Updating a dev checkout has no meaning — there is no packaged app to replace.
   if (!app.isPackaged) return;
+
+  isDeveloperIdSigned().then((signed) => {
+    canAutoInstall = signed;
+    autoUpdater.autoDownload = signed;
+    autoUpdater.autoInstallOnAppQuit = signed;
+  });
 
   setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), INITIAL_DELAY_MS);
   setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), REPEAT_MS);

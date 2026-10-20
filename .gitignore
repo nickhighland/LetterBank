@@ -21,7 +21,7 @@ npm-debug.log*
 #
 # A letterhead and a signature identify a real clinician and a real practice.
 # They are loaded at runtime through Document setup / Signature block and are
-# stored in the browser's local storage, never in the repository. Keep it that
+# stored in the app's data folder, never in the repository. Keep it that
 # way so the project can be shared or published without carrying anyone's
 # identity with it.
 # ---------------------------------------------------------------------------

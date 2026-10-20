@@ -13,7 +13,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "ELECTRON_DEV=true electron .",
-    "electron:build": "vite build && electron-builder --mac --arm64"
+    "electron:build": "vite build && electron-builder --mac --arm64",
+    "test": "vitest run"
   },
   "build": {
     "appId": "app.letterbank.letters",
@@ -23,7 +24,8 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "!electron/__tests__/**"
     ],
     "mac": {
       "category": "public.app-category.medical",
@@ -41,17 +43,26 @@
           ]
         }
       ],
-      "icon": "electron/icon.png"
+      "icon": "electron/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "publish": [
       {
         "provider": "github",
         "owner": "nickhighland",
-        "repo": "LetterBank"
+        "repo": "LetterBank",
+        "releaseType": "release"
       }
     ]
   },
   "dependencies": {
+    "@tiptap/core": "3.31.4",
+    "@tiptap/pm": "3.31.4",
+    "@tiptap/react": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
     "electron-updater": "^6.8.9",
     "file-saver": "^2.0.5",
     "jszip": "^3.10.1",
@@ -66,10 +77,11 @@
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.5.4",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.17.0",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
-    "vite": "^6.0.7"
+    "vite": "^6.0.7",
+    "vitest": "^5.0.5"
   }
 }

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Layers } from 'lucide-react';
-import { TEMPLATE_CATEGORIES } from '../data/defaultTemplates';
 import { Modal, Button, Field, TextInput } from './ui';
 
 const STARTER_BODY = `Dear {{client_name}},
@@ -12,7 +11,7 @@ Sincerely,`;
 /**
  * Hooks run unconditionally — the open/closed gate lives in <Modal>.
  */
-export function TemplateModal({ isOpen, onClose, onSaveNewTemplate }) {
+export function TemplateModal({ isOpen, onClose, onSaveNewTemplate, categories = [] }) {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('General');
   const [subject, setSubject] = useState('');
@@ -33,7 +32,7 @@ export function TemplateModal({ isOpen, onClose, onSaveNewTemplate }) {
     onSaveNewTemplate({
       id: `custom-${Date.now()}`,
       title: title.trim(),
-      category: category || 'General',
+      category: category.trim() || 'General',
       subject: subject.trim(),
       description: description.trim(),
       body: body.trim(),
@@ -84,18 +83,17 @@ export function TemplateModal({ isOpen, onClose, onSaveNewTemplate }) {
         </Field>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Category">
+          <Field label="Category" hint="Choose one or type a new one">
             <TextInput
-              as="select"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-            >
-              {TEMPLATE_CATEGORIES.filter((c) => c !== 'All').map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
+              list="new-letter-categories"
+            />
+            <datalist id="new-letter-categories">
+              {categories.map((c) => (
+                <option key={c} value={c} />
               ))}
-            </TextInput>
+            </datalist>
           </Field>
 
           <Field label="Subject line" hint="Optional">

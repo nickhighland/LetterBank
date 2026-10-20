@@ -1,19 +1,39 @@
-import { app, BrowserWindow, Menu, shell, ipcMain, dialog } from 'electron';
+import { app, BrowserWindow, Menu, shell, ipcMain, dialog, clipboard, session } from 'electron';
 import fs from 'fs/promises';
+import { execFile } from 'child_process';
 import { createRequire } from 'module';
 
 // main.js is ESM; the updater is CommonJS because electron-updater is.
 const require = createRequire(import.meta.url);
 const { registerUpdater } = require('./updater.cjs');
+const { createStore, registerStoreIpc } = require('./store.cjs');
+const { registerPrivacy } = require('./privacy.cjs');
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const isDev = process.env.ELECTRON_DEV === 'true' || !app.isPackaged;
+// The dev server only when asked for (npm run electron:dev); `electron .`
+// after a build runs the built app.
+const isDev = process.env.ELECTRON_DEV === 'true';
+
+// A separate data folder, for trying the app without touching real settings.
+if (process.env.LETTERBANK_USER_DATA) app.setPath('userData', process.env.LETTERBANK_USER_DATA);
 
 let mainWindow = null;
+
+const EXTERNAL_PROTOCOLS = new Set(['https:', 'mailto:']);
+
+function openExternalSafely(url) {
+  let protocol;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    return;
+  }
+  if (EXTERNAL_PROTOCOLS.has(protocol)) shell.openExternal(url);
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -41,18 +61,92 @@ function createWindow() {
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
 
-  // Handle external links
+  // Links open in the clinician's browser or mail app, never inside
+  // LetterBank, and only web and email links: shell.openExternal will also
+  // open file: paths and other apps' URL schemes, which a letter has no
+  // business reaching.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalSafely(url);
     return { action: 'deny' };
+  });
+  // The window itself never leaves the app (a dropped file or a stray link
+  // would otherwise replace it, letter and all).
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url === win.webContents.getURL()) return;
+    event.preventDefault();
+    openExternalSafely(url);
   });
 
   mainWindow = win;
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });
+  guardUnsavedDrafts(win);
 
   createMenu();
+}
+
+/**
+ * Unsaved changes in the Editor: ask before the window closes, the way a
+ * document app does. The page reports how many letters have unsaved changes.
+ */
+ipcMain.on('drafts:unsaved', (event, count) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) win.unsavedDrafts = Number(count) || 0;
+});
+
+/** Ask the page to save every draft; resolves true once they are on disk. */
+function requestDraftSave(win) {
+  return new Promise((resolve) => {
+    const finish = (ok) => {
+      clearTimeout(timer);
+      ipcMain.removeListener('drafts:saved', onSaved);
+      resolve(ok);
+    };
+    const onSaved = (event, ok) => {
+      if (event.sender === win.webContents) finish(Boolean(ok));
+    };
+    const timer = setTimeout(() => finish(false), 10000);
+    ipcMain.on('drafts:saved', onSaved);
+    win.webContents.send('app:save-drafts');
+  });
+}
+
+function guardUnsavedDrafts(win) {
+  let confirmed = false;
+  win.on('close', async (event) => {
+    if (confirmed || !win.unsavedDrafts) return;
+    event.preventDefault();
+
+    const count = win.unsavedDrafts;
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: ['Save', 'Don’t Save', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      message:
+        count === 1
+          ? 'Save your changes to this letter before closing?'
+          : `Save your changes to ${count} letters before closing?`,
+      detail: 'Changes you made in the Editor are lost if you don’t save them.',
+    });
+    if (response === 2) return;
+
+    if (response === 0 && !(await requestDraftSave(win))) {
+      const { response: anyway } = await dialog.showMessageBox(win, {
+        type: 'error',
+        buttons: ['Cancel', 'Close Without Saving'],
+        defaultId: 0,
+        cancelId: 0,
+        message: 'LetterBank could not save your changes.',
+        detail: 'Your letters are still open. Try saving again from the Editor.',
+      });
+      if (anyway !== 1) return;
+    }
+
+    confirmed = true;
+    win.close();
+  });
 }
 
 function createMenu() {
@@ -84,12 +178,28 @@ function createMenu() {
           }
         },
         {
+          label: 'Save Letter',
+          accelerator: 'CmdOrCtrl+S',
+          click: (menuItem, browserWindow) => {
+            if (browserWindow) browserWindow.webContents.send('app:save-letter');
+          }
+        },
+        { type: 'separator' },
+        {
           label: 'Export PDF',
           accelerator: 'CmdOrCtrl+E',
           click: (menuItem, browserWindow) => {
             if (browserWindow) browserWindow.webContents.send('app:export-pdf');
           }
         },
+        {
+          label: 'Export Word Document',
+          accelerator: 'CmdOrCtrl+Shift+E',
+          click: (menuItem, browserWindow) => {
+            if (browserWindow) browserWindow.webContents.send('app:export-word');
+          }
+        },
+        { type: 'separator' },
         {
           label: 'Check for Updates…',
           click: (menuItem, browserWindow) => {
@@ -123,10 +233,11 @@ function createMenu() {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
+        // Reloading erases the letter being written, since client details
+        // are never saved. Keep it to development builds, where it is useful.
+        ...(isDev
+          ? [{ role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' }, { type: 'separator' }]
+          : []),
         { role: 'resetZoom' },
         { role: 'zoomIn' },
         { role: 'zoomOut' },
@@ -171,6 +282,17 @@ const PDF_OPTIONS = {
   preferCSSPageSize: true,
 };
 
+// Files saved this session: the only ones the page may show in Finder or
+// hand to Mail, so it can't name any other file on the Mac. Kept in memory
+// only, since the names carry clients' names.
+const savedFiles = new Set();
+
+async function writeSaved(filePath, data) {
+  await fs.writeFile(filePath, data);
+  savedFiles.add(filePath);
+  return { saved: true, filePath };
+}
+
 function registerIpcHandlers() {
   // Render the current print-root to a PDF buffer.
   ipcMain.handle('pdf:render', async (event) => {
@@ -192,9 +314,7 @@ function registerIpcHandlers() {
     });
 
     if (canceled || !filePath) return { saved: false };
-
-    await fs.writeFile(filePath, data);
-    return { saved: true, filePath };
+    return writeSaved(filePath, data);
   });
 
   // Ask the user where to drop a batch archive.
@@ -207,9 +327,7 @@ function registerIpcHandlers() {
     });
 
     if (canceled || !filePath) return { saved: false };
-
-    await fs.writeFile(filePath, Buffer.from(buffer));
-    return { saved: true, filePath };
+    return writeSaved(filePath, Buffer.from(buffer));
   });
 
   // Ask where to save an exported Word document.
@@ -222,9 +340,24 @@ function registerIpcHandlers() {
     });
 
     if (canceled || !filePath) return { saved: false };
+    return writeSaved(filePath, Buffer.from(buffer));
+  });
 
-    await fs.writeFile(filePath, Buffer.from(buffer));
-    return { saved: true, filePath };
+  // After an export: show the file in Finder.
+  ipcMain.handle('file:reveal', (event, filePath) => {
+    if (!savedFiles.has(filePath)) return false;
+    shell.showItemInFolder(filePath);
+    return true;
+  });
+
+  // After an export: open a new Mail message with the file attached.
+  // Opening a file with Mail does exactly that, and needs no permission to
+  // control Mail.
+  ipcMain.handle('file:mail', (event, filePath) => {
+    if (process.platform !== 'darwin' || !savedFiles.has(filePath)) return false;
+    return new Promise((resolve) => {
+      execFile('open', ['-a', 'Mail', filePath], (err) => resolve(!err));
+    });
   });
 
   // Native print dialog, driven by the same @media print stylesheet.
@@ -240,6 +373,12 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(() => {
+  const store = createStore(app.getPath('userData'));
+  store.load();
+  store.pruneAssets();
+  registerStoreIpc(ipcMain, store);
+  registerPrivacy({ app, ipcMain, clipboard, session, store });
+
   registerIpcHandlers();
   registerUpdater(() => mainWindow);
   createWindow();
@@ -249,6 +388,9 @@ app.whenReady().then(() => {
   });
 });
 
+// Closing the window quits, on macOS too. Client details live only in the
+// window, and quitting is when everything they may have touched is cleared
+// (see privacy.cjs), so "closed" and "erased" mean the same thing.
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  app.quit();
 });

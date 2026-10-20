@@ -1,6 +1,7 @@
 /**
  * Variable parser and template replacement engine
  */
+import { isYes } from './conditions';
 
 export function extractVariables(text) {
   if (!text) return [];
@@ -39,7 +40,9 @@ export function inferFieldType(varName) {
     lower.includes('reasons') ||
     lower.includes('observations') ||
     lower.includes('accommodations') ||
-    lower.includes('resources')
+    lower.includes('resources') ||
+    // A postal address, on several lines; an email address is one line.
+    (lower.includes('address') && !lower.includes('email'))
   ) {
     return 'textarea';
   }
@@ -48,19 +51,29 @@ export function inferFieldType(varName) {
 
 /**
  * Field types a placeholder can take. `inferFieldType` guesses from the name;
- * a template's own `fields` list overrides the guess, which is how a custom
- * field picks its type when added from the editor's right-click menu.
+ * a definition (the clinician's field library, or the template's own `fields`
+ * list) overrides the guess. See utils/fieldDefs.js.
  */
 export const FIELD_TYPES = [
   { value: 'text', label: 'Text' },
+  { value: 'textarea', label: 'Long text' },
   { value: 'date', label: 'Date' },
   { value: 'time', label: 'Time' },
-  { value: 'textarea', label: 'Long text' },
+  { value: 'number', label: 'Number' },
+  { value: 'select', label: 'Dropdown' },
+  { value: 'yesno', label: 'Yes/No' },
 ];
 
 /** Common fields offered in the editor's Insert field menu. */
 export const BUILT_IN_FIELDS = [
   { name: 'date', type: 'date' },
+  {
+    name: 'pronouns',
+    label: 'Pronouns',
+    type: 'select',
+    options: ['they/them', 'she/her', 'he/him'],
+    help: 'Fills {{they}}, {{them}}, {{their}}, {{they_are}} and the rest.',
+  },
   { name: 'client_name', type: 'text' },
   { name: 'client_first_name', type: 'text' },
   { name: 'client_dob', type: 'date' },
@@ -68,8 +81,18 @@ export const BUILT_IN_FIELDS = [
   { name: 'end_date', type: 'date' },
   { name: 'appointment_date', type: 'date' },
   { name: 'appointment_time', type: 'time' },
+  {
+    name: 'client_address',
+    type: 'textarea',
+    help: 'Street on the first line, then city, state and ZIP.',
+  },
   { name: 'recipient_name', type: 'text' },
   { name: 'recipient_organization', type: 'text' },
+  {
+    name: 'recipient_address',
+    type: 'textarea',
+    help: 'Street on the first line, then city, state and ZIP.',
+  },
   { name: 'diagnosis', type: 'text' },
   { name: 'clinical_summary', type: 'textarea' },
   { name: 'clinician_name', type: 'text' },
@@ -109,10 +132,13 @@ export function formatTimeForDisplay(value) {
   return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-export function renderTemplate(templateText, values = {}, types = {}) {
+/** `labels` (name -> label) names the placeholder an empty field prints. */
+export function renderTemplate(templateText, values = {}, types = {}, labels = {}) {
   if (!templateText) return '';
   return templateText.replace(/\{\{([a-zA-Z0-9_-]+)\}\}/g, (match, varName) => {
     const val = values[varName];
+    // A Yes/No field left unticked is a No, not a missing value.
+    if (types[varName] === 'yesno') return isYes(val) ? 'Yes' : 'No';
     if (val !== undefined && val !== null && val !== '') {
       const str = String(val);
       // Date inputs hand back ISO (2026-08-25). A clinical letter must never
@@ -126,7 +152,7 @@ export function renderTemplate(templateText, values = {}, types = {}) {
       return str;
     }
     // Return subtle placeholder if empty
-    return `[${formatLabel(varName)}]`;
+    return `[${labels[varName] || formatLabel(varName)}]`;
   });
 }
 
@@ -205,6 +231,62 @@ export function formatLetterDate(isoValue, formatKey = 'long') {
   const date = parseIsoDate(isoValue) || new Date();
   const fmt = DATE_FORMATS[formatKey] || DATE_FORMATS.long;
   return fmt.format(date);
+}
+
+const MONTHS = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december',
+];
+
+function monthIndex(name) {
+  const lower = String(name).toLowerCase().replace(/\.$/, '');
+  return MONTHS.findIndex((m) => m === lower || (lower.length >= 3 && m.startsWith(lower)));
+}
+
+function isoFromParts(y, m, d) {
+  let year = Number(y);
+  if (String(y).length === 2) year += year >= 70 ? 1900 : 2000;
+  const date = new Date(year, Number(m) - 1, Number(d));
+  if (date.getFullYear() !== year || date.getMonth() !== Number(m) - 1 || date.getDate() !== Number(d)) {
+    return null; // 02/31/2026 and the like
+  }
+  return toIsoDate(date);
+}
+
+/**
+ * Turn a date as spreadsheets write it into yyyy-mm-dd: 10/22/2026, 10-22-26,
+ * 2026/10/22, Oct 22, 2026, 22 October 2026. Slashed dates are read
+ * month-first, the US convention. Anything unrecognised is returned unchanged.
+ */
+export function normalizeDate(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return text;
+  let m;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(text))) return isoFromParts(m[1], m[2], m[3]) || text;
+  if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/.exec(text))) return isoFromParts(m[3], m[1], m[2]) || text;
+  if ((m = /^([A-Za-z]+\.?)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/.exec(text))) {
+    const month = monthIndex(m[1]);
+    if (month >= 0) return isoFromParts(m[3], month + 1, m[2]) || text;
+  }
+  if ((m = /^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+\.?),?\s+(\d{4})$/.exec(text))) {
+    const month = monthIndex(m[2]);
+    if (month >= 0) return isoFromParts(m[3], month + 1, m[1]) || text;
+  }
+  return text;
+}
+
+/** "2:30 PM" or "2:30pm" -> "14:30", what a time picker holds. Others unchanged. */
+export function normalizeTime(value) {
+  const text = String(value ?? '').trim();
+  const m = /^(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?$/i.exec(text);
+  if (m) {
+    let h = Number(m[1]) % 12;
+    if (m[3].toLowerCase() === 'p') h += 12;
+    return `${String(h).padStart(2, '0')}:${m[2] || '00'}`;
+  }
+  const h24 = /^(\d{1,2}):(\d{2})$/.exec(text);
+  if (h24 && Number(h24[1]) < 24) return `${h24[1].padStart(2, '0')}:${h24[2]}`;
+  return text;
 }
 
 export function formatDateForDisplay(dateStr) {

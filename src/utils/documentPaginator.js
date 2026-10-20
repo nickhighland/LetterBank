@@ -1,4 +1,8 @@
 import { parseBlocks, blocksToHtml } from './letterMarkup';
+import { PAGE_BREAK_RE } from './letterBlocks';
+import { resolveLetterhead } from './storage';
+import { fillableArea } from '../constants/page';
+import { addressHtml, dateHeight, inWindow, windowLayout } from './recipient';
 
 /**
  * Document Paginator Engine
@@ -7,7 +11,8 @@ import { parseBlocks, blocksToHtml } from './letterMarkup';
  */
 
 export function paginateDocument({
-  renderedBody,
+  blocks: givenBlocks,
+  renderedBody = '',
   fillableWidth,
   fillableHeight,
   fontSize = 13.5,
@@ -19,22 +24,11 @@ export function paginateDocument({
   dateBlockHeight = 35,
   showContinuationHeader = true,
   signatureConfig = {},
-  clinician = {},
-  clientName = '',
+  firstPageHeader,
+  firstPageHtml = '',
 }) {
-  // Check for explicit manual pagebreaks
-  const manualSections = renderedBody.split(/---pagebreak---|\[\[page\]\]/i);
-
-  // If user used explicit pagebreaks, respect them
-  if (manualSections.length > 1) {
-    return manualSections.map((sec, idx) => ({
-      pageNumber: idx + 1,
-      blocks: parseBlocks(sec.trim()),
-      isSinglePage: false,
-      showSignature: idx === manualSections.length - 1,
-      totalPages: manualSections.length,
-    }));
-  }
+  const allBlocks = givenBlocks ?? textToBlocks(renderedBody);
+  const hasManualBreaks = allBlocks.some((b) => b.kind === 'pagebreak');
 
   // Calculate signature block height
   let sigHeight = 0;
@@ -46,13 +40,11 @@ export function paginateDocument({
   }
   sigHeight += 25; // padding/margin
 
-  // Page 1 carries the date line; pages 2+ carry the continuation header.
-  // Both are optional, and hiding one gives that space back to the body.
-  const dateHeaderHeight = showDate ? dateBlockHeight : 0;
+  // Page 1 carries the date line (and the address, when there is one);
+  // pages 2+ carry the continuation header. Both are optional, and hiding
+  // one gives that space back to the body.
+  let firstHeaderHeight = firstPageHeader ?? (showDate ? dateBlockHeight : 0);
   const continuationHeaderHeight = showContinuationHeader ? 28 : 0;
-
-  // Single page capacity
-  const singlePageMaxContentHeight = fillableHeight - dateHeaderHeight - sigHeight - 15;
 
   // Create temporary invisible element in DOM to measure exact rendered heights
   const measureEl = document.createElement('div');
@@ -73,13 +65,18 @@ export function paginateDocument({
   document.body.appendChild(measureEl);
 
   try {
+    if (firstPageHtml) {
+      measureEl.innerHTML = firstPageHtml;
+      firstHeaderHeight += measureEl.scrollHeight;
+    }
+    const singlePageMaxContentHeight = fillableHeight - firstHeaderHeight - sigHeight - 15;
+
     // Measure total content height, from the same block model the renderer uses.
-    const allBlocks = parseBlocks(renderedBody);
     measureEl.innerHTML = blocksToHtml(allBlocks, { paragraphSpacing, bodyAlignment });
     const totalContentHeight = measureEl.scrollHeight;
 
     // If total content + signature fits cleanly on 1 page:
-    if (totalContentHeight <= singlePageMaxContentHeight) {
+    if (!hasManualBreaks && totalContentHeight <= singlePageMaxContentHeight) {
       return [
         {
           pageNumber: 1,
@@ -98,10 +95,25 @@ export function paginateDocument({
     let currentPageNumber = 1;
 
     // Available height for Page 1
-    let availableHeight = fillableHeight - dateHeaderHeight - 15;
+    let availableHeight = fillableHeight - firstHeaderHeight - 15;
 
     for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
       const paragraph = paragraphs[pIdx];
+
+      // ---pagebreak--- always starts a new page, even after an empty one,
+      // and a page that overflows still continues onto the next.
+      if (paragraph.kind === 'pagebreak') {
+        pages.push({
+          pageNumber: currentPageNumber,
+          blocks: currentPageChunks,
+          isSinglePage: false,
+          showSignature: false,
+        });
+        currentPageNumber++;
+        currentPageChunks = [];
+        availableHeight = fillableHeight - continuationHeaderHeight - 15;
+        continue;
+      }
 
       // Measure paragraph height
       measureEl.innerHTML = blocksToHtml([paragraph], { paragraphSpacing, bodyAlignment });
@@ -161,7 +173,14 @@ export function paginateDocument({
     }
 
     // Push the last accumulated page chunks
-    if (currentPageChunks.length > 0) {
+    if (currentPageChunks.length === 0) {
+      pages.push({
+        pageNumber: currentPageNumber,
+        blocks: [],
+        isSinglePage: false,
+        showSignature: true,
+      });
+    } else {
       // Check if signature fits on this final page
       if (availableHeight < sigHeight && currentPageChunks.length > 1) {
         // If signature doesn't fit, pop the last chunk to a new page or push signature to next page
@@ -198,3 +217,65 @@ export function paginateDocument({
 }
 
 
+
+/**
+ * Paginate a letter from its document settings.
+ *
+ * The preview and batch export used to each build the paginator's arguments
+ * themselves, and batch export left out the date block's real height, so a
+ * clinician who enlarged the date got batch PDFs that broke pages in different
+ * places from the preview. Both now come through here.
+ */
+export function paginateLetter({
+  blocks,
+  renderedBody,
+  letterhead: rawLetterhead,
+  signature,
+  recipient = [],
+}) {
+  const letterhead = resolveLetterhead(rawLetterhead);
+  const { width: fillableWidth, height: fillableHeight } = fillableArea(letterhead);
+
+  // The address takes a fixed slice of page 1 in a window envelope, and its
+  // own height above the letter otherwise.
+  const address = recipient.length
+    ? inWindow(letterhead, recipient)
+      ? { firstPageHeader: windowLayout(letterhead).header }
+      : { firstPageHtml: addressHtml(recipient, letterhead.paragraphSpacing) }
+    : {};
+
+  const pages = paginateDocument({
+    blocks,
+    renderedBody,
+    fillableWidth,
+    fillableHeight,
+    fontSize: letterhead.fontSize,
+    lineHeight: letterhead.lineHeight,
+    fontFamily: letterhead.fontFamily,
+    paragraphSpacing: letterhead.paragraphSpacing,
+    bodyAlignment: letterhead.bodyAlignment,
+    showDate: letterhead.showDate,
+    // Reserve what the date actually occupies, so changing its size or
+    // spacing repaginates instead of silently overflowing.
+    dateBlockHeight: dateHeight(letterhead),
+    showContinuationHeader: letterhead.showContinuationHeader,
+    signatureConfig: signature,
+    ...address,
+  });
+
+  // Page 1 carries the address, so every renderer of the pages prints it.
+  return recipient.length ? pages.map((p) => (p.pageNumber === 1 ? { ...p, recipient } : p)) : pages;
+}
+
+/**
+ * Blocks from a rendered body, for callers that have only the text:
+ * ---pagebreak--- becomes a { kind: 'pagebreak' } between sections.
+ */
+export function textToBlocks(renderedBody) {
+  const sections = String(renderedBody || '').split(PAGE_BREAK_RE);
+  if (sections.length === 1) return parseBlocks(sections[0]);
+  return sections.flatMap((section, i) => [
+    ...(i > 0 ? [{ kind: 'pagebreak' }] : []),
+    ...parseBlocks(section.trim()),
+  ]);
+}

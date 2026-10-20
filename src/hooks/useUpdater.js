@@ -40,9 +40,12 @@ export function useUpdater(notify) {
     return () => offs.forEach((fn) => fn());
   }, [check]);
 
+  // A signed build has already downloaded the update and restarts into it;
+  // an unsigned one sends the clinician to the release page.
   const openDownload = useCallback(() => {
-    window.electronAPI?.openReleasesPage?.();
-  }, []);
+    if (update?.canAutoInstall) window.electronAPI?.installUpdate?.();
+    else window.electronAPI?.openReleasesPage?.();
+  }, [update]);
 
   const dismiss = useCallback(() => setUpdate(null), []);
 
