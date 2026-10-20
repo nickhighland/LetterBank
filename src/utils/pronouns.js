@@ -6,9 +6,16 @@
  *
  * Capitalised at the start of a sentence: {{They}}, {{Their}}, {{They_are}}…
  * These are not fields of their own; Quick Fill shows the one Pronouns field.
+ *
+ * A letter about more than one person, or a client who uses she/they, can
+ * set any single pronoun apart from the letter's choice. Those overrides are
+ * kept by position ("body:2" is the third pronoun in the body) and, like
+ * every client detail, live only in memory.
  */
 
 export const PRONOUN_FIELD = 'pronouns';
+/** Where Quick Fill keeps a letter's single-pronoun overrides, beside its values. */
+export const PRONOUN_OVERRIDES = '@pronouns';
 export const PRONOUN_OPTIONS = ['they/them', 'she/her', 'he/him'];
 
 const SETS = {
@@ -75,4 +82,47 @@ export function pronounValues(value) {
     out[capitalise(token)] = capitalise(word);
   }
   return out;
+}
+
+/** The word a pronoun placeholder prints for one set: ('Their', 'she') -> 'Her'. */
+export function pronounWord(token, set) {
+  const base = token.toLowerCase();
+  const word = SETS[set]?.[base];
+  if (!word) return '';
+  return token === base ? word : capitalise(word);
+}
+
+/** The set a pronoun choice stands for: 'she', 'he' or 'they'. */
+export const pronounSet = (value) => setFor(value);
+
+const PLACEHOLDER_RE = /\{\{([a-zA-Z0-9_-]+)\}\}/g;
+
+/** Every pronoun placeholder in `text`, in order: [{ key, token, start, end }]. */
+export function pronounSpots(text, part) {
+  const spots = [];
+  for (const match of String(text ?? '').matchAll(PLACEHOLDER_RE)) {
+    if (!isPronounToken(match[1])) continue;
+    spots.push({
+      key: `${part}:${spots.length}`,
+      token: match[1],
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+  return spots;
+}
+
+/** `text` with each overridden pronoun written out in its own set. */
+export function applyPronounOverrides(text, overrides, part) {
+  const source = String(text ?? '');
+  if (!overrides || !Object.keys(overrides).length) return source;
+  let out = '';
+  let at = 0;
+  for (const spot of pronounSpots(source, part)) {
+    const word = pronounWord(spot.token, overrides[spot.key]);
+    if (!word) continue;
+    out += source.slice(at, spot.start) + word;
+    at = spot.end;
+  }
+  return out + source.slice(at);
 }

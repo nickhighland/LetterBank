@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateConditions, parseCondition, describeConditions } from '../conditions';
-import { pronounValues, normalisePronouns } from '../pronouns';
+import { pronounValues, normalisePronouns, applyPronounOverrides, pronounSpots } from '../pronouns';
 import {
   allLetterFields,
   letterFieldsInUse,
@@ -81,6 +81,20 @@ describe('pronouns', () => {
     expect(letterFieldsInUse('{{They}} said {{they_were}} fine.', {})).toEqual(['pronouns']);
     expect(normalisePronouns('Her')).toBe('she/her');
     expect(normalisePronouns('')).toBe('');
+  });
+
+  it('lets one pronoun differ from the letter\'s choice', () => {
+    const text = '{{They_are}} improving, and {{their}} father says {{they_were}} up late. {{Their}} mother agrees.';
+    expect(pronounSpots(text, 'body').map((s) => s.key)).toEqual(['body:0', 'body:1', 'body:2', 'body:3']);
+
+    // The client is she/her; the third pronoun is about someone else.
+    const overrides = { 'body:2': 'he', 'body:3': 'they' };
+    expect(renderLetter(applyPronounOverrides(text, overrides, 'body'), { pronouns: 'she/her' })).toBe(
+      'She is improving, and her father says he was up late. Their mother agrees.'
+    );
+    // Overrides for another part of the letter, or none, leave it as it was.
+    expect(applyPronounOverrides(text, { 'subject:0': 'he' }, 'body')).toBe(text);
+    expect(applyPronounOverrides(text, undefined, 'body')).toBe(text);
   });
 });
 

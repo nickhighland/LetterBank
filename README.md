@@ -82,6 +82,12 @@ or they/them) and fills every pronoun in the letter from it:
 `{{they_are}}`, `{{they_were}}` and `{{they_have}}` keep the verb in
 agreement: "she is", "they are".
 
+The Pronouns choice covers the whole letter, and any single pronoun can still
+be set on its own: open **Each pronoun** under it in Quick Fill and pick
+another set for the one that refers to someone else (a parent, say), or for a
+client who uses more than one set, like she/they. Like every client detail,
+those choices are erased when LetterBank closes.
+
 Each letter's **Subject** can be reworded in Quick Fill without touching the
 template. Page 2 onward carries it in the header — "RE: Medical Leave for Jane
 Doe" — set in Document setup as `RE: {{subject}}`.
