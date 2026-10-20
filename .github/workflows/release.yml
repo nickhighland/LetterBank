@@ -36,6 +36,17 @@ jobs:
       - run: npm test
       - run: npm run build
 
+      # electron-builder uploads the dmg and zip at the same time, and each one
+      # tries to create the release when it doesn't exist yet, so the second
+      # fails. Create it first as a draft and publish it once every file is up.
+      - name: Create the draft release
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+              --title "LetterBank $GITHUB_REF_NAME (macOS Apple Silicon)" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and publish
         run: |
           if [ -n "$MAC_CERTIFICATE" ]; then
@@ -54,3 +65,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Publish the release
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
