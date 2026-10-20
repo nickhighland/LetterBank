@@ -67,6 +67,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('app:print', handler);
     return () => ipcRenderer.removeListener('app:print', handler);
   },
+  onExportWord: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('app:export-word', handler);
+    return () => ipcRenderer.removeListener('app:export-word', handler);
+  },
+  onSaveLetter: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('app:save-letter', handler);
+    return () => ipcRenderer.removeListener('app:save-letter', handler);
+  },
 
   // Returns the current print-root as a PDF byte array (for batch/ZIP).
   renderPdf: () => ipcRenderer.invoke('pdf:render'),

@@ -178,12 +178,28 @@ function createMenu() {
           }
         },
         {
+          label: 'Save Letter',
+          accelerator: 'CmdOrCtrl+S',
+          click: (menuItem, browserWindow) => {
+            if (browserWindow) browserWindow.webContents.send('app:save-letter');
+          }
+        },
+        { type: 'separator' },
+        {
           label: 'Export PDF',
           accelerator: 'CmdOrCtrl+E',
           click: (menuItem, browserWindow) => {
             if (browserWindow) browserWindow.webContents.send('app:export-pdf');
           }
         },
+        {
+          label: 'Export Word Document',
+          accelerator: 'CmdOrCtrl+Shift+E',
+          click: (menuItem, browserWindow) => {
+            if (browserWindow) browserWindow.webContents.send('app:export-word');
+          }
+        },
+        { type: 'separator' },
         {
           label: 'Check for Updates…',
           click: (menuItem, browserWindow) => {

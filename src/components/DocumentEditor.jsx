@@ -6,7 +6,6 @@ import { allLetterFields, resolveFieldDefs, withFieldDef } from '../utils/fieldD
 import { isPronounToken } from '../utils/pronouns';
 import { FieldSettingsModal } from './FieldSettingsModal';
 import { TYPE_ICONS } from './FieldForm';
-import { TEMPLATE_CATEGORIES } from '../data/defaultTemplates';
 import { Button, TextInput, Field } from './ui';
 import { MarkupHelpModal } from './MarkupHelpModal';
 import { FieldMenu } from './FieldMenu';
@@ -20,6 +19,8 @@ import { insertField as insertFieldInEditor, wrapOptional } from '../editor/comm
  * here, switching to Quick Fill unmounted the editor and threw unsaved edits
  * away without asking, and the preview never showed them until Save.
  */
+const SAVE_KEYS = typeof navigator !== 'undefined' && /Mac/i.test(navigator.platform) ? '⌘S' : 'Ctrl+S';
+
 /** Starting points for a letter's recipient address. */
 const ADDRESSES = [
   { label: 'Client’s address', text: '{{client_name}}\n{{client_address}}' },
@@ -43,6 +44,7 @@ export function DocumentEditor({
   onDiscard,
   fieldLibrary = [],
   onSaveLibraryField,
+  categories = [],
 }) {
   const [showHelp, setShowHelp] = useState(false);
 
@@ -167,16 +169,16 @@ export function DocumentEditor({
         <div className="grid grid-cols-2 gap-4">
           <Field label="Category">
             <TextInput
-              as="select"
               value={draft.category}
               onChange={(e) => set({ category: e.target.value })}
-            >
-              {TEMPLATE_CATEGORIES.filter((c) => c !== 'All').map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
+              list="letter-categories"
+              title="Choose a category or type a new one"
+            />
+            <datalist id="letter-categories">
+              {categories.map((c) => (
+                <option key={c} value={c} />
               ))}
-            </TextInput>
+            </datalist>
           </Field>
           <Field label="Subject">
             <TextInput
@@ -313,6 +315,7 @@ export function DocumentEditor({
           variant="primary"
           onClick={() => onSaveTemplate({ ...template, ...draft })}
           disabled={!isDirty}
+          title={`Save (${SAVE_KEYS})`}
           className="flex-1"
         >
           <Save className="w-3.5 h-3.5" />

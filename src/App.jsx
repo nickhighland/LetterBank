@@ -71,6 +71,7 @@ import {
 } from './utils/exporter';
 import { exportDocx, buildDocx } from './utils/docxExporter';
 import { addressLines } from './utils/recipient';
+import { categoriesInUse, categoryChoices, renameCategory } from './utils/categories';
 import { paginateLetter } from './utils/documentPaginator';
 import { mergeRecordValues } from './utils/batch';
 import { useLetterPages } from './hooks/useLetterPages';
@@ -134,6 +135,8 @@ export function App() {
   const [letterSubjects, setLetterSubjects] = useState({});
   // Wording changed on the page in Quick Fill, for this letter only.
   const [letterBodies, setLetterBodies] = useState({});
+  // Letters opened this session, latest first, for the sidebar. Forgotten on quit.
+  const [recentIds, setRecentIds] = useState([]);
 
   // ---- UI state ------------------------------------------------------------
   const [activeView, setActiveView] = useState('fill');
@@ -873,6 +876,37 @@ export function App() {
     notify('Template saved');
   };
 
+  /** ⌘S: save the open letter's changes, wherever they were made. */
+  const handleSaveShortcut = () => {
+    if (draftDirty) handleSaveTemplate({ ...savedTemplate, ...editorDraft });
+  };
+
+  const handleSelectTemplate = (id) => {
+    setActiveTemplateId(id);
+    setCsvRecords([]);
+    // The letter being left is the one to come back to.
+    if (activeTemplate?.id && activeTemplate.id !== id) {
+      setRecentIds((prev) => [activeTemplate.id, ...prev.filter((r) => r !== activeTemplate.id)].slice(0, 6));
+    }
+  };
+
+  const handleTogglePin = (id) =>
+    setTemplates((prev) => prev.map((t) => (t.id === id ? { ...t, pinned: !t.pinned } : t)));
+
+  /** Rename a category on every letter, unsaved changes in the Editor included. */
+  const handleRenameCategory = (from, to) => {
+    setTemplates((prev) => renameCategory(prev, from, to));
+    setTemplateDrafts((prev) =>
+      Object.fromEntries(
+        Object.entries(prev).map(([id, draft]) => [id, renameCategory([draft], from, to)[0]])
+      )
+    );
+    notify(`Renamed “${from}” to “${to.trim()}”`);
+  };
+
+  const categories = useMemo(() => categoriesInUse(templates), [templates]);
+  const allCategories = useMemo(() => categoryChoices(templates), [templates]);
+
   const handleSaveAsNewTemplate = (newTpl, fromId) => {
     setTemplates((prev) => [newTpl, ...prev]);
     // "Save as new" leaves the original as it was saved.
@@ -1201,8 +1235,24 @@ export function App() {
   useElectronMenu({
     onNewLetter: () => setOpenModal('template'),
     onExportPdf: handleExportPdf,
+    onExportWord: handleExportWord,
     onPrint: handlePrint,
+    onSave: handleSaveShortcut,
   });
+
+  // ⌘S / Ctrl+S saves the letter, here and in the browser build. On the
+  // desktop the page sees the key first, so the menu's Save doesn't fire too.
+  const saveShortcut = useRef(handleSaveShortcut);
+  saveShortcut.current = handleSaveShortcut;
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== 's') return;
+      e.preventDefault();
+      saveShortcut.current();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const csvBatchInfo =
     csvRecords.length > 0
@@ -1245,14 +1295,15 @@ export function App() {
       <div className="flex-1 flex min-h-0">
         <Sidebar
           templates={templates}
+          categories={categories}
+          recentIds={recentIds}
           activeTemplateId={activeTemplate?.id}
-          onSelectTemplate={(id) => {
-            setActiveTemplateId(id);
-            setCsvRecords([]);
-          }}
+          onSelectTemplate={handleSelectTemplate}
           onNewTemplate={() => setOpenModal('template')}
           onDuplicateTemplate={handleDuplicateTemplate}
           onDeleteTemplate={handleDeleteTemplate}
+          onTogglePin={handleTogglePin}
+          onRenameCategory={handleRenameCategory}
           onResetTemplates={handleResetTemplates}
           onBackup={handleBackup}
           onRestore={handleRestore}
@@ -1303,6 +1354,7 @@ export function App() {
             onDiscard={handleDiscardDraft}
             fieldLibrary={fieldLibrary}
             onSaveLibraryField={handleSaveLibraryField}
+            categories={allCategories}
           />
         )}
 
@@ -1383,6 +1435,7 @@ export function App() {
         isOpen={openModal === 'template'}
         onClose={() => setOpenModal(null)}
         onSaveNewTemplate={handleSaveAsNewTemplate}
+        categories={allCategories}
       />
 
       <IncompleteFieldsModal

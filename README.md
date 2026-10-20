@@ -42,6 +42,22 @@ deletes any client details an older version saved.
 letterhead or signature cannot be committed by accident. The bundled
 `signature-placeholder.svg` is a generic sample, not anyone's signature.
 
+## Finding letters
+
+Pin the letters you use most (the pin on a letter's card) and they stay at the
+top of the list; the letters you opened recently this session follow. A
+letter's **Category** is any name you like: choose one in the Editor or type a
+new one, and double-click a category in the sidebar to rename it on every
+letter at once.
+
+| Shortcut | |
+| --- | --- |
+| ⌘N | New letter |
+| ⌘S | Save the letter's changes |
+| ⌘E | Export PDF |
+| ⌘⇧E | Export Word document |
+| ⌘P | Print |
+
 ## Writing letters
 
 `{{double_braces}}` become fillable fields in Quick Fill. In the Editor,

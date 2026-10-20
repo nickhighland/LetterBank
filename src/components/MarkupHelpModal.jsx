@@ -20,6 +20,7 @@ const SECTIONS = [
       ['Return', 'New paragraph. Return twice leaves a list.'],
       ['⇧Return', 'New line in the same paragraph, as in an address'],
       [`${MOD}Return`, 'Start a new page'],
+      [`${MOD}S`, 'Save the letter'],
     ],
   },
   {
