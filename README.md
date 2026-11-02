@@ -132,17 +132,24 @@ Choose who writes in **Settings › AI writer**:
 | Service | What it needs |
 | --- | --- |
 | Claude, ChatGPT, Gemini | An API key from Anthropic, OpenAI or Google (the setting links to where to get one) |
+| DeepSeek, GLM (Z.ai), Kimi (Moonshot), Qwen (Alibaba Cloud), MiniMax, Mistral, Grok (xAI) | An API key from that company. GLM, Kimi, Qwen and MiniMax also ask which **Region** your account is on: International or Mainland China |
+| OpenRouter | An OpenRouter key, then any of its models, written as `company/model` |
 | Ollama | Ollama running on this Mac, and a model pulled (`ollama pull llama3.3`) |
 | Open WebUI | Its address and an API key (Open WebUI › Settings › Account) |
-| Other local server | An OpenAI-compatible address, such as LM Studio's `http://localhost:1234/v1` |
+| Other server | An OpenAI-compatible address, such as LM Studio's `http://localhost:1234/v1`, or an online service's address and key |
 
 **Load models** lists what the service offers and checks the key and address
-at the same time.
+at the same time. Each service starts with a suggested model; new models come
+out often, so if one is turned down, Load models shows the current names.
+
+OpenRouter passes each request to a company that runs the chosen model.
+LetterBank asks it to use only companies that don't keep or train on what
+they're sent, so a model no such company runs can't be used.
 
 What the AI receives is your description and, when rewriting, the letter's
 wording and the names of its fields. It never receives what you type into
 Quick Fill, and no practice details beyond the names of the fields that hold
-them. Claude, ChatGPT and Gemini run on their companies' servers, so describe
+them. Online services run on their companies' servers, so describe
 the letter, not the client: before anything that looks like a client's details
 (a name typed into Quick Fill, a date of birth, a phone number or email) is
 sent off this Mac, LetterBank asks first. A model on your own Mac keeps

@@ -43,6 +43,135 @@ export const PROVIDERS = {
     keyUrl: 'https://aistudio.google.com/app/apikey',
     keyPlaceholder: 'AIza…',
   },
+
+  // Online services that speak OpenAI's Chat Completions ("api: 'chat'").
+  // `format` is the reply format each one documents: a JSON Schema, or just
+  // "a JSON object". `models` are suggestions shown before Load models.
+  // Services with a separate site for mainland China list both as `regions`.
+  deepseek: {
+    id: 'deepseek',
+    label: 'DeepSeek',
+    company: 'DeepSeek',
+    cloud: true,
+    key: 'required',
+    api: 'chat',
+    format: 'json_object',
+    baseUrl: 'https://api.deepseek.com',
+    defaultModel: 'deepseek-v4-pro',
+    models: ['deepseek-v4-pro', 'deepseek-flash'],
+    keyUrl: 'https://platform.deepseek.com/api_keys',
+    keyPlaceholder: 'sk-…',
+  },
+  glm: {
+    id: 'glm',
+    label: 'GLM',
+    company: 'Z.ai',
+    tagline: 'Z.ai (Zhipu)',
+    cloud: true,
+    key: 'required',
+    api: 'chat',
+    format: 'json_object',
+    regions: [
+      { id: 'global', label: 'International', baseUrl: 'https://api.z.ai/api/paas/v4' },
+      { id: 'china', label: 'Mainland China', baseUrl: 'https://open.bigmodel.cn/api/paas/v4' },
+    ],
+    defaultModel: 'glm-5.3',
+    models: ['glm-5.3'],
+    keyUrl: 'https://z.ai/manage-apikey/apikey-list',
+  },
+  kimi: {
+    id: 'kimi',
+    label: 'Kimi',
+    company: 'Moonshot AI',
+    cloud: true,
+    key: 'required',
+    api: 'chat',
+    format: 'json_object',
+    regions: [
+      { id: 'global', label: 'International', baseUrl: 'https://api.moonshot.ai/v1' },
+      { id: 'china', label: 'Mainland China', baseUrl: 'https://api.moonshot.cn/v1' },
+    ],
+    defaultModel: 'kimi-k3.1-pro',
+    models: ['kimi-k3.1-pro', 'kimi-k3'],
+    keyUrl: 'https://platform.kimi.ai/console/api-keys',
+    keyPlaceholder: 'sk-…',
+  },
+  qwen: {
+    id: 'qwen',
+    label: 'Qwen',
+    company: 'Alibaba Cloud',
+    cloud: true,
+    key: 'required',
+    api: 'chat',
+    format: 'json_object',
+    regions: [
+      { id: 'global', label: 'International', baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1' },
+      { id: 'china', label: 'Mainland China', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+    ],
+    defaultModel: 'qwen3.7-plus',
+    models: ['qwen3.7-max', 'qwen3.7-plus', 'qwen3.6-flash'],
+    keyUrl: 'https://home.qwencloud.com/api-keys',
+    keyPlaceholder: 'sk-…',
+  },
+  minimax: {
+    id: 'minimax',
+    label: 'MiniMax',
+    company: 'MiniMax',
+    cloud: true,
+    key: 'required',
+    api: 'chat',
+    format: 'json_object',
+    regions: [
+      { id: 'global', label: 'International', baseUrl: 'https://api.minimax.io/v1' },
+      { id: 'china', label: 'Mainland China', baseUrl: 'https://api.minimaxi.com/v1' },
+    ],
+    defaultModel: 'MiniMax-M3.1-Flash',
+    models: ['MiniMax-M3.1-Flash', 'MiniMax-M3'],
+    keyUrl: 'https://platform.minimax.io/user-center/basic-information/interface-key',
+  },
+  mistral: {
+    id: 'mistral',
+    label: 'Mistral',
+    company: 'Mistral AI',
+    cloud: true,
+    key: 'required',
+    api: 'chat',
+    format: 'json_schema',
+    baseUrl: 'https://api.mistral.ai/v1',
+    defaultModel: 'mistral-large-latest',
+    models: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'],
+    keyUrl: 'https://console.mistral.ai/api-keys',
+  },
+  xai: {
+    id: 'xai',
+    label: 'Grok',
+    company: 'xAI',
+    cloud: true,
+    key: 'required',
+    api: 'chat',
+    format: 'json_schema',
+    baseUrl: 'https://api.x.ai/v1',
+    defaultModel: 'grok-4.7',
+    models: ['grok-4.7'],
+    keyUrl: 'https://console.x.ai',
+    keyPlaceholder: 'xai-…',
+  },
+  openrouter: {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    company: 'OpenRouter',
+    tagline: 'Hundreds of models, one key',
+    cloud: true,
+    key: 'required',
+    api: 'chat',
+    format: 'json_schema',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'anthropic/claude-opus-5.5',
+    models: ['anthropic/claude-opus-5.5'],
+    keyUrl: 'https://openrouter.ai/settings/keys',
+    keyPlaceholder: 'sk-or-…',
+  },
+
   ollama: {
     id: 'ollama',
     label: 'Ollama',
@@ -63,12 +192,12 @@ export const PROVIDERS = {
   },
   compatible: {
     id: 'compatible',
-    label: 'Other local server',
-    company: 'LM Studio, llama.cpp, vLLM, Jan…',
+    label: 'Other server',
+    company: 'LM Studio, vLLM, or any OpenAI-compatible service',
     cloud: false,
     key: 'optional',
     defaultBaseUrl: 'http://localhost:1234/v1',
-    keyHint: 'Only if your server asks for one.',
+    keyHint: 'Only if the server or service asks for one.',
     keyPlaceholder: 'Optional',
   },
 };
@@ -85,8 +214,28 @@ const FALLBACK_MODELS = new Set(['claude-fable-5-1', 'claude-opus-5-5', 'claude-
 
 const ANTHROPIC_VERSION = '2026-10-21';
 
-/** Long enough for a slow local model on a laptop; cloud services answer sooner. */
-export const TIMEOUT_MS = { cloud: 3 * 60 * 1000, local: 10 * 60 * 1000 };
+/** Long enough for a slow local model on a laptop, or a cloud model that thinks first. */
+export const TIMEOUT_MS = { cloud: 5 * 60 * 1000, local: 10 * 60 * 1000 };
+
+/** Online services reached through OpenAI's Chat Completions. */
+export const isChatService = (provider) => PROVIDERS[provider]?.api === 'chat';
+
+/** The region whose address `baseUrl` is, or the service's first. */
+export function regionOf(provider, baseUrl) {
+  const regions = PROVIDERS[provider]?.regions;
+  if (!regions) return null;
+  const wanted = cleanBaseUrl(baseUrl);
+  return regions.find((r) => r.baseUrl === wanted) || regions[0];
+}
+
+/**
+ * Where an online service is reached. Only its own addresses: the saved key
+ * goes with every request, so an address from settings that isn't one of
+ * them is never used.
+ */
+export function serviceUrl(provider, baseUrl) {
+  return regionOf(provider, baseUrl)?.baseUrl || PROVIDERS[provider]?.baseUrl || '';
+}
 
 /** "http://localhost:11434/" -> "http://localhost:11434", or '' if it isn't a web address. */
 export function cleanBaseUrl(value) {
@@ -228,9 +377,48 @@ export function buildChatRequest(provider, { model, baseUrl, apiKey, system, pro
       return { url: `${baseFor(provider, baseUrl)}${path}`, init: { method: 'POST', headers, body: json(body) } };
     }
 
-    default:
-      throw new AiError('Choose an AI service in Settings › AI writer.');
+    default: {
+      if (!isChatService(provider)) throw new AiError('Choose an AI service in Settings › AI writer.');
+      const p = PROVIDERS[provider];
+      const body = {
+        model,
+        stream: false,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: prompt },
+        ],
+      };
+      // Some services stop at a few thousand words unless asked for more.
+      if (!plain) body.max_tokens = 16000;
+      if (schema) {
+        body.response_format =
+          p.format === 'json_object'
+            ? { type: 'json_object' }
+            : { type: 'json_schema', json_schema: { name: 'letter', schema, strict: true } };
+      }
+      // OpenRouter passes the request on to one of the companies that run the
+      // model. Only to those that don't keep or train on what they're sent.
+      if (provider === 'openrouter') body.provider = { data_collection: 'deny' };
+      Object.assign(headers, bearer(apiKey));
+      return {
+        url: `${serviceUrl(provider, baseUrl)}/chat/completions`,
+        init: { method: 'POST', headers, body: json(body) },
+      };
+    }
   }
+}
+
+/** The text of an OpenAI-style Chat Completions reply. */
+function readChatCompletion(name, data) {
+  const choice = data?.choices?.[0];
+  const message = choice?.message;
+  if (message?.refusal) throw new AiError(`${name} declined to write this letter: ${message.refusal}`);
+  if (choice?.finish_reason === 'content_filter') {
+    throw new AiError(`${name} declined to write this letter. Try describing it differently.`);
+  }
+  const content = message?.content;
+  const text = Array.isArray(content) ? textOf(content.map((c) => c?.text)) : content || '';
+  return { text, truncated: choice?.finish_reason === 'length' };
 }
 
 /** Text and thinking-tag clean-up shared by every reply. */
@@ -275,14 +463,10 @@ export function readChatReply(provider, data) {
     case 'ollama':
       return { text: data?.message?.content || '', truncated: data?.done_reason === 'length' };
     case 'openwebui':
-    case 'compatible': {
-      const choice = data?.choices?.[0];
-      const content = choice?.message?.content;
-      const text = Array.isArray(content) ? textOf(content.map((c) => c?.text)) : content || '';
-      return { text, truncated: choice?.finish_reason === 'length' };
-    }
+    case 'compatible':
+      return readChatCompletion(name, data);
     default:
-      return { text: '', truncated: false };
+      return isChatService(provider) ? readChatCompletion(name, data) : { text: '', truncated: false };
   }
 }
 
@@ -308,9 +492,13 @@ export function buildModelsRequest(provider, { baseUrl, apiKey, browser = false 
     case 'compatible':
       return { url: `${baseFor(provider, baseUrl)}/models`, init: { headers: bearer(apiKey) } };
     default:
-      throw new AiError('Choose an AI service in Settings › AI writer.');
+      if (!isChatService(provider)) throw new AiError('Choose an AI service in Settings › AI writer.');
+      return { url: `${serviceUrl(provider, baseUrl)}/models`, init: { headers: bearer(apiKey) } };
   }
 }
+
+// Models an online service lists that can't write a letter.
+const NOT_FOR_WRITING = /(embed|rerank|moderation|whisper|tts|speech|transcri|audio|image|ocr)/i;
 
 // OpenAI lists every model it has; these ones can't write a letter.
 const OPENAI_NOT_FOR_WRITING =
@@ -345,6 +533,12 @@ export function readModels(provider, data) {
       models = (data?.data || []).map((m) => ({ id: m.id, label: m.name || m.id }));
       break;
     default:
+      if (!isChatService(provider)) break;
+      models = (data?.data || [])
+        .filter((m) => m?.id && !NOT_FOR_WRITING.test(m.id))
+        // OpenRouter says what each model puts out; keep the ones that write text.
+        .filter((m) => !m.architecture?.output_modalities || m.architecture.output_modalities.includes('text'))
+        .map((m) => ({ id: m.id, label: m.name || m.id }));
       break;
   }
   const seen = new Set();
@@ -366,6 +560,12 @@ export function describeHttpError(provider, status, data, text) {
   const p = PROVIDERS[provider];
   const where = p?.cloud ? 'Settings › AI writer' : 'Settings › AI writer (server address and key)';
 
+  if (provider === 'openrouter' && /data policy|data_collection|privacy/i.test(detail)) {
+    return new AiError(
+      'None of the companies that run this model on OpenRouter promise not to keep or train on what they’re sent, so nothing was sent. Choose another model in Settings › AI writer.',
+      { status }
+    );
+  }
   if (status === 401 || status === 403) {
     return new AiError(`${name} didn't accept the API key. Check it in ${where}.${detail ? ` (${detail})` : ''}`, { status });
   }
@@ -463,10 +663,23 @@ export async function chat(provider, options, { signal, timeoutMs, fetchImpl } =
 
 /** The models `provider` offers: [{ id, label }]. */
 export async function listModels(provider, options, { signal, fetchImpl } = {}) {
-  const data = await send(provider, options.baseUrl, buildModelsRequest(provider, options), {
-    signal,
-    timeoutMs: 30 * 1000,
-    fetchImpl,
-  });
+  let data;
+  try {
+    data = await send(provider, options.baseUrl, buildModelsRequest(provider, options), {
+      signal,
+      timeoutMs: 30 * 1000,
+      fetchImpl,
+    });
+  } catch (err) {
+    // A service without a model list: the suggestions are what there is.
+    const suggested = PROVIDERS[provider]?.models;
+    if (err instanceof AiError && err.status === 404 && isChatService(provider) && suggested?.length) {
+      throw new AiError(
+        `${providerName(provider)} doesn’t share a list of its models. Type a model name, such as ${suggested[0]}.`,
+        { status: 404 }
+      );
+    }
+    throw err;
+  }
   return readModels(provider, data);
 }

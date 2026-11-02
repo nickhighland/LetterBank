@@ -11,6 +11,9 @@ import {
   cleanBaseUrl,
   sendsOffComputer,
   isOnThisComputer,
+  PROVIDERS,
+  PROVIDER_IDS,
+  serviceUrl,
 } from '../ai/providers.js';
 import { createKeyStore } from '../ai/keys.js';
 import { registerAiIpc } from '../ai/ipc.js';
@@ -79,6 +82,114 @@ describe('requests', () => {
 
   it('needs a model', () => {
     expect(() => buildChatRequest('anthropic', { ...ask, model: '' })).toThrow(/model/);
+  });
+});
+
+describe('online services that speak Chat Completions', () => {
+  const chatServices = PROVIDER_IDS.filter((id) => PROVIDERS[id].api === 'chat');
+
+  it('covers the services asked for, each with a key page and a suggested model', () => {
+    expect(chatServices).toEqual(
+      expect.arrayContaining(['deepseek', 'glm', 'kimi', 'qwen', 'minimax', 'mistral', 'xai', 'openrouter'])
+    );
+    for (const id of chatServices) {
+      const p = PROVIDERS[id];
+      expect(p.cloud).toBe(true);
+      expect(p.key).toBe('required');
+      expect(p.keyUrl).toMatch(/^https:\/\//);
+      expect(p.models).toContain(p.defaultModel);
+      expect(serviceUrl(id)).toMatch(/^https:\/\//);
+      expect(sendsOffComputer(id)).toBe(true);
+    }
+  });
+
+  it('asks each for JSON the way it documents', () => {
+    const deepseek = buildChatRequest('deepseek', { ...ask, model: 'deepseek-v4-pro' });
+    expect(deepseek.url).toBe('https://api.deepseek.com/chat/completions');
+    expect(deepseek.init.headers.Authorization).toBe('Bearer KEY');
+    const b = body(deepseek);
+    expect(b.response_format).toEqual({ type: 'json_object' });
+    expect(b.max_tokens).toBe(16000);
+    expect(b.messages[0]).toEqual({ role: 'system', content: 'SYSTEM' });
+    expect(b).not.toHaveProperty('temperature');
+
+    const mistral = body(buildChatRequest('mistral', ask));
+    expect(mistral.response_format.type).toBe('json_schema');
+    expect(mistral.response_format.json_schema.schema).toEqual({ type: 'object' });
+
+    const plain = body(buildChatRequest('deepseek', { ...ask, schema: undefined, plain: true }));
+    expect(plain).not.toHaveProperty('response_format');
+    expect(plain).not.toHaveProperty('max_tokens');
+  });
+
+  it('uses the region chosen, and never sends the key anywhere else', () => {
+    expect(buildChatRequest('glm', ask).url).toBe('https://api.z.ai/api/paas/v4/chat/completions');
+    expect(buildChatRequest('glm', { ...ask, baseUrl: 'https://open.bigmodel.cn/api/paas/v4/' }).url).toBe(
+      'https://open.bigmodel.cn/api/paas/v4/chat/completions'
+    );
+    expect(buildChatRequest('kimi', { ...ask, baseUrl: 'https://api.moonshot.cn/v1' }).url).toBe(
+      'https://api.moonshot.cn/v1/chat/completions'
+    );
+    expect(buildChatRequest('kimi', { ...ask, baseUrl: 'https://evil.example/v1' }).url).toBe(
+      'https://api.moonshot.ai/v1/chat/completions'
+    );
+    expect(buildChatRequest('deepseek', { ...ask, baseUrl: 'https://evil.example' }).url).toBe(
+      'https://api.deepseek.com/chat/completions'
+    );
+  });
+
+  it('keeps OpenRouter to companies that don’t keep or train on requests, even in a plain retry', async () => {
+    expect(body(buildChatRequest('openrouter', ask)).provider).toEqual({ data_collection: 'deny' });
+    const fetchImpl = fakeFetch(
+      [400, { error: { message: 'Model does not support response_format' } }],
+      [200, { choices: [{ message: { content: '{"body":"Hi"}' }, finish_reason: 'stop' }] }]
+    );
+    await chat('openrouter', ask, { fetchImpl });
+    expect(fetchImpl.calls[0].url).toBe('https://openrouter.ai/api/v1/chat/completions');
+    expect(fetchImpl.calls[1].body.response_format).toBeUndefined();
+    expect(fetchImpl.calls[1].body.provider).toEqual({ data_collection: 'deny' });
+
+    await expect(
+      chat('openrouter', ask, {
+        fetchImpl: fakeFetch([404, { error: { message: 'No endpoints found matching your data policy (Paid model training)' } }]),
+      })
+    ).rejects.toThrow(/nothing was sent/);
+  });
+
+  it('reads replies, refusals and model lists', async () => {
+    expect(
+      readChatReply('glm', {
+        choices: [{ message: { content: '{"a":1}', reasoning_content: 'thinking…' }, finish_reason: 'stop' }],
+      })
+    ).toEqual({ text: '{"a":1}', truncated: false });
+    expect(readChatReply('kimi', { choices: [{ message: { content: '{' }, finish_reason: 'length' }] }).truncated).toBe(true);
+    expect(() => readChatReply('qwen', { choices: [{ message: { content: '' }, finish_reason: 'content_filter' }] })).toThrow(
+      /declined/
+    );
+    expect(() => readChatReply('openrouter', { choices: [{ message: { refusal: 'No.' } }] })).toThrow(/declined/);
+
+    expect(
+      readModels('mistral', {
+        data: [{ id: 'mistral-large-latest' }, { id: 'mistral-embed' }, { id: 'mistral-ocr-latest' }, { id: 'mistral-moderation-latest' }],
+      }).map((m) => m.id)
+    ).toEqual(['mistral-large-latest']);
+    expect(
+      readModels('openrouter', {
+        data: [
+          { id: 'anthropic/claude-opus-5.5', name: 'Anthropic: Claude Opus 5.5', architecture: { output_modalities: ['text'] } },
+          { id: 'acme/painter', name: 'Painter', architecture: { output_modalities: ['image'] } },
+        ],
+      })
+    ).toEqual([{ id: 'anthropic/claude-opus-5.5', label: 'Anthropic: Claude Opus 5.5' }]);
+
+    const fetchImpl = fakeFetch([200, { data: [{ id: 'deepseek-v4-pro' }] }]);
+    await listModels('deepseek', { apiKey: 'K' }, { fetchImpl });
+    expect(fetchImpl.calls[0].url).toBe('https://api.deepseek.com/models');
+    expect(fetchImpl.calls[0].init.headers.Authorization).toBe('Bearer K');
+
+    await expect(listModels('minimax', { apiKey: 'K' }, { fetchImpl: fakeFetch([404, {}]) })).rejects.toThrow(
+      /doesn’t share a list of its models\. Type a model name, such as MiniMax-M3\.1-Flash/
+    );
   });
 });
 
