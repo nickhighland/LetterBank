@@ -53,6 +53,7 @@ letter at once.
 | Shortcut | |
 | --- | --- |
 | ⌘N | New letter |
+| ⇧⌘N | New letter with AI |
 | ⌘S | Save the letter's changes |
 | ⌘E | Export PDF |
 | ⌘⇧E | Export Word document |
@@ -115,6 +116,41 @@ CSV merge and Word export read them as before:
 ---pagebreak---
 [[if telehealth]] … [[else]] … [[end]]
 ```
+
+## Writing letters with AI
+
+Press **AI** above the letter list (or **File › New Letter with AI…**, ⇧⌘N),
+describe the letter, and the AI writes it: who it's to, what it says, and a
+field for every name, date and other detail, with pronoun placeholders
+wherever it talks about the client. Look it over, ask for changes ("make it
+shorter", "mention the next appointment"), then **Add to my letters** and fill
+it in like any other. In the Editor, **Rewrite with AI** changes the open
+letter instead; the result is an unsaved change you can save or discard.
+
+Choose who writes in **Settings › AI writer**:
+
+| Service | What it needs |
+| --- | --- |
+| Claude, ChatGPT, Gemini | An API key from Anthropic, OpenAI or Google (the setting links to where to get one) |
+| Ollama | Ollama running on this Mac, and a model pulled (`ollama pull llama3.3`) |
+| Open WebUI | Its address and an API key (Open WebUI › Settings › Account) |
+| Other local server | An OpenAI-compatible address, such as LM Studio's `http://localhost:1234/v1` |
+
+**Load models** lists what the service offers and checks the key and address
+at the same time.
+
+What the AI receives is your description and, when rewriting, the letter's
+wording and the names of its fields. It never receives what you type into
+Quick Fill, and no practice details beyond the names of the fields that hold
+them. Claude, ChatGPT and Gemini run on their companies' servers, so describe
+the letter, not the client: before anything that looks like a client's details
+(a name typed into Quick Fill, a date of birth, a phone number or email) is
+sent off this Mac, LetterBank asks first. A model on your own Mac keeps
+everything here.
+
+API keys are kept in the macOS keychain, never in settings or backups, and
+are never shown again once saved. After an update macOS may ask once whether
+LetterBank can use its saved key; choose **Always Allow**.
 
 ## Export
 

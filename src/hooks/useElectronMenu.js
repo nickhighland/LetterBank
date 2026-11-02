@@ -12,9 +12,9 @@ import { useEffect, useRef } from 'react';
  * Handlers are held in a ref so the IPC subscription is set up once and never
  * torn down on re-render, while still always invoking the latest closure.
  */
-export function useElectronMenu({ onNewLetter, onExportPdf, onExportWord, onPrint, onSave }) {
+export function useElectronMenu({ onNewLetter, onNewAiLetter, onExportPdf, onExportWord, onPrint, onSave }) {
   const handlers = useRef({});
-  handlers.current = { onNewLetter, onExportPdf, onExportWord, onPrint, onSave };
+  handlers.current = { onNewLetter, onNewAiLetter, onExportPdf, onExportWord, onPrint, onSave };
 
   useEffect(() => {
     const api = window.electronAPI;
@@ -22,6 +22,7 @@ export function useElectronMenu({ onNewLetter, onExportPdf, onExportWord, onPrin
 
     const unsubscribes = [
       api.onNewLetter?.(() => handlers.current.onNewLetter?.()),
+      api.onNewAiLetter?.(() => handlers.current.onNewAiLetter?.()),
       api.onExportPdf?.(() => handlers.current.onExportPdf?.()),
       api.onPrint?.(() => handlers.current.onPrint?.()),
       api.onExportWord?.(() => handlers.current.onExportWord?.()),

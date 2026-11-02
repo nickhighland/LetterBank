@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layers } from 'lucide-react';
+import { Layers, Sparkles } from 'lucide-react';
 import { Modal, Button, Field, TextInput } from './ui';
 
 const STARTER_BODY = `Dear {{client_name}},
@@ -11,7 +11,7 @@ Sincerely,`;
 /**
  * Hooks run unconditionally — the open/closed gate lives in <Modal>.
  */
-export function TemplateModal({ isOpen, onClose, onSaveNewTemplate, categories = [] }) {
+export function TemplateModal({ isOpen, onClose, onSaveNewTemplate, categories = [], onWriteWithAi }) {
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('General');
   const [subject, setSubject] = useState('');
@@ -63,6 +63,19 @@ export function TemplateModal({ isOpen, onClose, onSaveNewTemplate, categories =
       width="max-w-xl"
       footer={
         <>
+          {onWriteWithAi && (
+            <Button
+              variant="ghost"
+              className="mr-auto"
+              onClick={() => {
+                reset();
+                onWriteWithAi();
+              }}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Write it with AI instead
+            </Button>
+          )}
           <Button variant="ghost" onClick={handleClose}>
             Cancel
           </Button>

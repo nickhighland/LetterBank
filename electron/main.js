@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, shell, ipcMain, dialog, clipboard, session } from 'electron';
+import { app, BrowserWindow, Menu, shell, ipcMain, dialog, clipboard, session, safeStorage } from 'electron';
 import fs from 'fs/promises';
 import { execFile } from 'child_process';
 import { createRequire } from 'module';
@@ -9,6 +9,8 @@ const { registerUpdater } = require('./updater.cjs');
 const { createStore, registerStoreIpc } = require('./store.cjs');
 const { registerPrivacy } = require('./privacy.cjs');
 import path from 'path';
+import { createKeyStore } from './ai/keys.js';
+import { registerAiIpc } from './ai/ipc.js';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -175,6 +177,13 @@ function createMenu() {
           accelerator: 'CmdOrCtrl+N',
           click: (menuItem, browserWindow) => {
             if (browserWindow) browserWindow.webContents.send('app:new-letter');
+          }
+        },
+        {
+          label: 'New Letter with AI…',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: (menuItem, browserWindow) => {
+            if (browserWindow) browserWindow.webContents.send('app:new-ai-letter');
           }
         },
         {
@@ -378,6 +387,8 @@ app.whenReady().then(() => {
   store.pruneAssets();
   registerStoreIpc(ipcMain, store);
   registerPrivacy({ app, ipcMain, clipboard, session, store });
+  // The AI letter writer: requests go out from here, keys stay in the keychain.
+  registerAiIpc(ipcMain, createKeyStore(store.dir, safeStorage));
 
   registerIpcHandlers();
   registerUpdater(() => mainWindow);
