@@ -1,4 +1,4 @@
-import { PROVIDERS, PROVIDER_IDS, isProvider, cleanBaseUrl, sendsOffComputer } from '../../electron/ai/providers.js';
+import { PROVIDERS, PROVIDER_IDS, isProvider, cleanBaseUrl, sendsOffComputer, serviceUrl } from '../../electron/ai/providers.js';
 import { readSetting, saveSetting } from '../utils/persist';
 
 /**
@@ -33,11 +33,14 @@ export const saveAiSettings = (settings) => saveSetting('ai', settings);
 /** The chosen service, model and address: what a request needs, keys aside. */
 export function activeAi(settings) {
   const provider = settings.provider;
+  const info = PROVIDERS[provider];
+  const saved = settings.baseUrls[provider];
   return {
     provider,
     model: String(settings.models[provider] || '').trim(),
-    baseUrl: PROVIDERS[provider].defaultBaseUrl ? cleanBaseUrl(settings.baseUrls[provider]) : '',
-    info: PROVIDERS[provider],
+    // A server's own address, or the region an online service is reached in.
+    baseUrl: info.defaultBaseUrl ? cleanBaseUrl(saved) : info.regions ? serviceUrl(provider, saved) : '',
+    info,
     offComputer: sendsOffComputer(provider, settings.baseUrls[provider]),
   };
 }

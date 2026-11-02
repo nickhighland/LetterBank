@@ -150,4 +150,14 @@ describe('settings', () => {
     expect(aiSetupNeeded({ ...s, provider: 'compatible' }, {})).toMatch(/model/);
     expect(activeAi({ ...s, provider: 'ollama' })).toMatchObject({ baseUrl: 'http://localhost:11434', offComputer: false });
   });
+
+  it('starts each online service on a suggested model and its international site', () => {
+    const s = normaliseAiSettings({ provider: 'glm' });
+    expect(activeAi(s)).toMatchObject({ model: 'glm-5.3', baseUrl: 'https://api.z.ai/api/paas/v4', offComputer: true });
+    const china = normaliseAiSettings({ provider: 'glm', baseUrls: { glm: 'https://open.bigmodel.cn/api/paas/v4' } });
+    expect(activeAi(china).baseUrl).toBe('https://open.bigmodel.cn/api/paas/v4');
+    expect(activeAi(normaliseAiSettings({ provider: 'deepseek' }))).toMatchObject({ model: 'deepseek-v4-pro', baseUrl: '' });
+    expect(aiSetupNeeded(s, {})).toMatch(/GLM API key/);
+    expect(aiSetupNeeded(s, { glm: true })).toBe('');
+  });
 });

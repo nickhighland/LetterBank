@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
 import { Cloud, Laptop, Server, KeyRound, RefreshCw, Check, ShieldCheck, ShieldAlert, Loader2 } from 'lucide-react';
-import { PROVIDERS, PROVIDER_IDS, sendsOffComputer, cleanBaseUrl } from '../../electron/ai/providers.js';
+import { PROVIDERS, PROVIDER_IDS, sendsOffComputer, cleanBaseUrl, regionOf } from '../../electron/ai/providers.js';
 import { listModels } from '../ai/client';
-import { Button, Field, TextInput } from './ui';
+import { Button, Field, SegmentedControl, TextInput } from './ui';
 
 const PROVIDER_ICONS = { cloud: Cloud, local: Laptop, server: Server };
+
+const GROUPS = [
+  { title: 'Online services', ids: PROVIDER_IDS.filter((id) => PROVIDERS[id].cloud) },
+  { title: 'On your Mac or your own server', ids: PROVIDER_IDS.filter((id) => !PROVIDERS[id].cloud) },
+];
 
 /**
  * Settings › AI writer: which service writes letters, its model, and its key
@@ -29,6 +34,12 @@ export function AiSettingsPanel({ value, onChange, savedKeys = {}, pendingKeys =
   const setKeyMode = (mode) => setKeyModes((prev) => ({ ...prev, [provider]: mode }));
   const baseUrl = value.baseUrls[provider] ?? info.defaultBaseUrl ?? '';
   const offComputer = sendsOffComputer(provider, baseUrl);
+  const region = regionOf(provider, baseUrl);
+  // Suggestions first, then whatever Load models found.
+  const modelOptions = [
+    ...(info.models || []).map((id) => ({ id, label: id })),
+    ...(list.models || []),
+  ].filter((m, i, all) => all.findIndex((x) => x.id === m.id) === i);
 
   const setProvider = (id) => onChange({ ...value, provider: id });
   const setModel = (model) => onChange({ ...value, models: { ...value.models, [provider]: model } });
@@ -62,36 +73,52 @@ export function AiSettingsPanel({ value, onChange, savedKeys = {}, pendingKeys =
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-2">
-        {PROVIDER_IDS.map((id) => {
-          const p = PROVIDERS[id];
-          const Icon = PROVIDER_ICONS[kindOf(p)];
-          const active = id === provider;
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setProvider(id)}
-              aria-pressed={active}
-              className={`flex items-start gap-2.5 p-3 rounded-xl border text-left cursor-pointer transition-colors
-                ${active ? 'border-accent bg-accent-soft' : 'border-line bg-surface-raised hover:bg-surface-hover'}`}
-            >
-              <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${active ? 'text-accent-ink' : 'text-ink-muted'}`} />
-              <span className="min-w-0">
-                <span className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
-                  {p.label}
-                  {savedKeys[id] && !active && (
-                    <Check className="w-3 h-3 text-success" aria-label="Set up" />
-                  )}
-                </span>
-                <span className="block text-[11px] leading-snug text-ink-muted">{p.company}</span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {GROUPS.map((group) => (
+        <div key={group.title} className="space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">{group.title}</p>
+          <div className="grid grid-cols-3 gap-2">
+            {group.ids.map((id) => {
+              const p = PROVIDERS[id];
+              const Icon = PROVIDER_ICONS[kindOf(p)];
+              const active = id === provider;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setProvider(id)}
+                  aria-pressed={active}
+                  className={`flex items-start gap-2.5 p-3 rounded-xl border text-left cursor-pointer transition-colors
+                    ${active ? 'border-accent bg-accent-soft' : 'border-line bg-surface-raised hover:bg-surface-hover'}`}
+                >
+                  <Icon className={`w-4 h-4 mt-0.5 shrink-0 ${active ? 'text-accent-ink' : 'text-ink-muted'}`} />
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+                      {p.label}
+                      {savedKeys[id] && !active && <Check className="w-3 h-3 text-success" aria-label="Set up" />}
+                    </span>
+                    <span className="block text-[11px] leading-snug text-ink-muted">{p.tagline || p.company}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
 
       <div className="rounded-xl border p-4 space-y-5 border-line bg-surface-sunken">
+        {region && (
+          <Field
+            label="Region"
+            hint={`Use the site where you made your ${info.label} account. Keys from one don’t work on the other.`}
+          >
+            <SegmentedControl
+              value={region.id}
+              onChange={(id) => setBaseUrl(info.regions.find((r) => r.id === id).baseUrl)}
+              options={info.regions.map((r) => ({ value: r.id, label: r.label }))}
+            />
+          </Field>
+        )}
+
         {info.defaultBaseUrl && (
           <Field
             label="Server address"
@@ -100,7 +127,7 @@ export function AiSettingsPanel({ value, onChange, savedKeys = {}, pendingKeys =
                 ? 'Ollama’s address on this Mac is usually http://localhost:11434.'
                 : provider === 'openwebui'
                   ? 'Where you open Open WebUI in your browser, such as http://localhost:3000.'
-                  : 'The server’s OpenAI-compatible address, usually ending in /v1. LM Studio: http://localhost:1234/v1.'
+                  : 'An OpenAI-compatible address, usually ending in /v1. LM Studio: http://localhost:1234/v1. An online service gives its own in its documentation.'
             }
           >
             <TextInput
@@ -208,7 +235,7 @@ export function AiSettingsPanel({ value, onChange, savedKeys = {}, pendingKeys =
             autoCapitalize="off"
           />
           <datalist id={`ai-models-${provider}`}>
-            {(list.models || []).map((m) => (
+            {modelOptions.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label !== m.id ? m.label : null}
               </option>
@@ -234,7 +261,13 @@ export function AiSettingsPanel({ value, onChange, savedKeys = {}, pendingKeys =
           <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0 text-success" />
         )}
         <div className="space-y-1.5">
-          {info.cloud ? (
+          {provider === 'openrouter' ? (
+            <p>
+              OpenRouter passes what you type in the AI writer to the company that runs the model you choose. LetterBank
+              asks it to use only companies that don’t keep or train on what they’re sent. Describe the letter, not the
+              client: names, dates and other details become fields you fill in afterwards.
+            </p>
+          ) : info.cloud ? (
             <p>
               {info.label} runs on {info.company}’s servers, so what you type in the AI writer is sent to {info.company}.
               Describe the letter, not the client: names, dates and other details become fields you fill in afterwards.
