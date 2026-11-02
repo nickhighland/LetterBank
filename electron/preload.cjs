@@ -72,6 +72,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('app:export-word', handler);
     return () => ipcRenderer.removeListener('app:export-word', handler);
   },
+  onNewAiLetter: (cb) => {
+    const handler = () => cb();
+    ipcRenderer.on('app:new-ai-letter', handler);
+    return () => ipcRenderer.removeListener('app:new-ai-letter', handler);
+  },
   onSaveLetter: (cb) => {
     const handler = () => cb();
     ipcRenderer.on('app:save-letter', handler);
@@ -99,6 +104,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Only files saved this session; resolves false otherwise.
   revealFile: (filePath) => ipcRenderer.invoke('file:reveal', filePath),
   mailFile: (filePath) => ipcRenderer.invoke('file:mail', filePath),
+
+  // --- AI letter writer ----------------------------------------------------
+  // Requests are made by the main process. API keys go in and never come
+  // back out: the page only learns which services have one.
+  ai: {
+    keyStatus: () => ipcRenderer.invoke('ai:keys'),
+    setKey: (provider, key) => ipcRenderer.invoke('ai:setKey', provider, key),
+    generate: (requestId, request) => ipcRenderer.invoke('ai:generate', requestId, request),
+    cancel: (requestId) => ipcRenderer.invoke('ai:cancel', requestId),
+    listModels: (request) => ipcRenderer.invoke('ai:models', request),
+  },
 
   // --- Updates -------------------------------------------------------------
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

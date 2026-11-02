@@ -138,6 +138,7 @@ export function Sidebar({
   activeTemplateId,
   onSelectTemplate,
   onNewTemplate,
+  onWriteWithAi,
   onDuplicateTemplate,
   onDeleteTemplate,
   onTogglePin,
@@ -273,15 +274,28 @@ export function Sidebar({
           <h2 className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
             Letters · {templates.length}
           </h2>
-          <button
-            onClick={onNewTemplate}
-            title="Create a new letter"
-            className="flex items-center gap-1 h-7 px-2.5 text-[12px] font-semibold rounded-lg
-                       cursor-pointer transition-colors bg-accent text-white hover:bg-accent-hover"
-          >
-            <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
-            New
-          </button>
+          <div className="flex items-center gap-1.5">
+            {onWriteWithAi && (
+              <button
+                onClick={onWriteWithAi}
+                title="Describe a letter and let AI write it (⇧⌘N)"
+                className="flex items-center gap-1 h-7 px-2.5 text-[12px] font-semibold rounded-lg
+                           cursor-pointer transition-colors bg-accent-soft text-accent-ink hover:brightness-95"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                AI
+              </button>
+            )}
+            <button
+              onClick={onNewTemplate}
+              title="Create a new letter"
+              className="flex items-center gap-1 h-7 px-2.5 text-[12px] font-semibold rounded-lg
+                         cursor-pointer transition-colors bg-accent text-white hover:bg-accent-hover"
+            >
+              <Plus className="w-3.5 h-3.5" strokeWidth={2.5} />
+              New
+            </button>
+          </div>
         </div>
 
         <div className="relative">

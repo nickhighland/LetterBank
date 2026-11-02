@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Save, Copy, RotateCcw, Plus } from 'lucide-react';
+import { Save, Copy, RotateCcw, Plus, Sparkles } from 'lucide-react';
 import { EditorContent } from '@tiptap/react';
 import { formatLabel } from '../utils/variableParser';
 import { allLetterFields, resolveFieldDefs, withFieldDef } from '../utils/fieldDefs';
@@ -45,6 +45,7 @@ export function DocumentEditor({
   fieldLibrary = [],
   onSaveLibraryField,
   categories = [],
+  onRewriteWithAi,
 }) {
   const [showHelp, setShowHelp] = useState(false);
 
@@ -241,6 +242,19 @@ export function DocumentEditor({
         <Field
           label="Letter"
           hint="Right-click to insert a field. Return starts a new paragraph; Shift-Return a new line."
+          action={
+            onRewriteWithAi ? (
+              <button
+                type="button"
+                onClick={onRewriteWithAi}
+                title="Describe a change and let AI rewrite this letter"
+                className="inline-flex items-center gap-1 text-[11px] font-medium cursor-pointer text-accent-ink hover:underline"
+              >
+                <Sparkles className="w-3 h-3" />
+                Rewrite with AI
+              </button>
+            ) : null
+          }
         >
           <div className="rounded-lg border border-line bg-surface-base focus-within:border-accent">
             <div className="sticky top-0 z-10 px-1.5 py-1 border-b rounded-t-lg border-line bg-surface-raised">

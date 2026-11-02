@@ -14,6 +14,7 @@ import {
   AlignCenter,
   AlignRight,
   Braces,
+  Sparkles,
 } from 'lucide-react';
 import {
   DEFAULT_PRESETS,
@@ -29,6 +30,8 @@ import { resolveSignatureTokens } from './LetterDocument';
 import { FieldLibraryPanel } from './FieldLibraryPanel';
 import { normaliseFieldLibrary } from '../utils/fieldDefs';
 import { marginHidesWindow } from '../utils/recipient';
+import { AiSettingsPanel } from './AiSettingsPanel';
+import { DEFAULT_AI } from '../ai/settings';
 
 // ---- Letterhead Constants ----
 const MARGIN_PRESETS = [
@@ -226,6 +229,10 @@ export function SettingsModal({
   onSaveClinician,
   fieldLibrary = [],
   onSaveFieldLibrary,
+  aiSettings = DEFAULT_AI,
+  onSaveAiSettings,
+  savedAiKeys = {},
+  onSaveAiKeys,
   onNotify,
 }) {
   // Main settings tab: 'presets' | 'letterhead' | 'signature'
@@ -242,6 +249,9 @@ export function SettingsModal({
   const [currentClin, setCurrentClin] = useState(clinician);
   const [currentFields, setCurrentFields] = useState(fieldLibrary);
   const [selectedField, setSelectedField] = useState(null);
+  const [currentAi, setCurrentAi] = useState(aiSettings);
+  // API keys typed on the AI tab, saved with everything else: provider -> key ('' removes it).
+  const [pendingKeys, setPendingKeys] = useState({});
 
   // Presets custom fields state
   const [customKey, setCustomKey] = useState('');
@@ -257,6 +267,8 @@ export function SettingsModal({
       setCurrentClin(clinician || DEFAULT_CLINICIAN);
       setCurrentFields(fieldLibrary);
       setSelectedField(null);
+      setCurrentAi(aiSettings);
+      setPendingKeys({});
     }
     // fieldLibrary is read when the dialog opens; saving it here would reset
     // the field being edited.
@@ -334,6 +346,8 @@ export function SettingsModal({
     onSaveSignature(currentSig);
     onSaveClinician(currentClin);
     onSaveFieldLibrary?.(normaliseFieldLibrary(currentFields));
+    onSaveAiSettings?.(currentAi);
+    if (Object.keys(pendingKeys).length) onSaveAiKeys?.(pendingKeys);
     onApplyPresetsToCurrentLetter?.(currentPresets);
     onClose();
   };
@@ -350,12 +364,12 @@ export function SettingsModal({
       isOpen={isOpen}
       onClose={onClose}
       title="Settings & Defaults"
-      subtitle="Configure practice presets, letterhead layout, digital signatures and your own fields."
+      subtitle="Configure practice presets, letterhead layout, digital signatures, your own fields and the AI writer."
       icon={Sliders}
       width="max-w-3xl"
       footer={
         <>
-          {mainTab === 'fields' ? (
+          {mainTab === 'fields' || mainTab === 'ai' ? (
             <span className="mr-auto" />
           ) : (
             <Button variant="ghost" onClick={handleResetCurrentTab} className="mr-auto">
@@ -382,6 +396,7 @@ export function SettingsModal({
             { value: 'letterhead', label: 'Letterhead', Icon: ImageIcon },
             { value: 'signature', label: 'Signature', Icon: PenTool },
             { value: 'fields', label: 'My fields', Icon: Braces },
+            { value: 'ai', label: 'AI writer', Icon: Sparkles },
           ]}
         />
       </div>
@@ -394,6 +409,23 @@ export function SettingsModal({
             selected={selectedField}
             onSelect={setSelectedField}
             savedNames={fieldLibrary.map((f) => f.name)}
+          />
+        )}
+
+        {mainTab === 'ai' && (
+          <AiSettingsPanel
+            value={currentAi}
+            onChange={setCurrentAi}
+            savedKeys={savedAiKeys}
+            pendingKeys={pendingKeys}
+            onChangePendingKey={(provider, key) =>
+              setPendingKeys((prev) => {
+                const next = { ...prev };
+                if (key === undefined) delete next[provider];
+                else next[provider] = key;
+                return next;
+              })
+            }
           />
         )}
 

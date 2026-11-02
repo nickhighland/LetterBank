@@ -15,6 +15,7 @@ import { Toast } from './components/Toast';
 import { PracticeSwitcher } from './components/PracticeSwitcher';
 import { UpdateBanner } from './components/UpdateBanner';
 import { IncompleteFieldsModal } from './components/IncompleteFieldsModal';
+import { AiWriterModal } from './components/AiWriterModal';
 
 import {
   loadTemplates,
@@ -78,6 +79,8 @@ import { mergeRecordValues } from './utils/batch';
 import { useLetterPages } from './hooks/useLetterPages';
 import { useElectronMenu } from './hooks/useElectronMenu';
 import { useUpdater } from './hooks/useUpdater';
+import { loadAiSettings, saveAiSettings } from './ai/settings';
+import { keyStatus as loadAiKeyStatus, saveKey as saveAiKey } from './ai/client';
 
 /**
  * Which `openModal` values open the Settings modal, and which of them name a
@@ -91,7 +94,7 @@ import { useUpdater } from './hooks/useUpdater';
  * never equal the string in `openModal`, so the modal would not have opened
  * even once the crash was gone.
  */
-const SETTINGS_TABS = ['presets', 'letterhead', 'signature', 'fields'];
+const SETTINGS_TABS = ['presets', 'letterhead', 'signature', 'fields', 'ai'];
 
 /** How a failed save is described: "Couldn't save your letterhead". */
 const SAVE_LABELS = {
@@ -103,6 +106,7 @@ const SAVE_LABELS = {
   theme: 'the theme',
   activeTemplateId: 'the open letter',
   fieldLibrary: 'your fields',
+  ai: 'your AI writer settings',
 };
 const SETTINGS_MODALS = ['settings', ...SETTINGS_TABS];
 
@@ -127,6 +131,10 @@ export function App() {
   const [letterhead, setLetterhead] = useState(loadLetterhead);
   const [theme, setTheme] = useState(loadTheme);
   const [fieldLibrary, setFieldLibrary] = useState(loadFieldLibrary);
+  const [aiSettings, setAiSettings] = useState(loadAiSettings);
+  // Which AI services have a saved API key. The keys themselves stay in the
+  // main process (electron/ai/keys.js).
+  const [aiKeys, setAiKeys] = useState({});
 
   // ---- Client details: memory only ------------------------------------------
   // What is typed into each letter, and each letter's own date and subject.
@@ -145,6 +153,8 @@ export function App() {
   const [toast, setToast] = useState(null);
   const [openModal, setOpenModal] = useState(null);
   const [pendingAction, setPendingAction] = useState(null);
+  // The AI writer to go back to when Settings was opened from it.
+  const [returnToAi, setReturnToAi] = useState(null);
 
   // ---- Batch merge state ---------------------------------------------------
   const [csvRecords, setCsvRecords] = useState([]);
@@ -211,6 +221,15 @@ export function App() {
   useEffect(() => void saveLetterhead(letterhead), [letterhead]);
   useEffect(() => void saveActiveTemplateId(activeTemplateId), [activeTemplateId]);
   useEffect(() => void saveFieldLibrary(fieldLibrary), [fieldLibrary]);
+  useEffect(() => void saveAiSettings(aiSettings), [aiSettings]);
+
+  useEffect(() => {
+    let live = true;
+    loadAiKeyStatus().then((keys) => live && setAiKeys(keys));
+    return () => {
+      live = false;
+    };
+  }, []);
 
   // ---- Derived -------------------------------------------------------------
   const activeProfile =
@@ -942,6 +961,37 @@ export function App() {
     });
   }, []);
 
+  // ---- AI letter writer ------------------------------------------------------
+  /** Save the API keys typed in Settings › AI writer ('' removes one). */
+  const handleSaveAiKeys = async (pending) => {
+    for (const [provider, key] of Object.entries(pending)) {
+      try {
+        setAiKeys(await saveAiKey(provider, key));
+      } catch (err) {
+        notify(`Couldn't save the API key: ${err?.message || err}`, 'error');
+      }
+    }
+  };
+
+  /** A letter the AI wrote, added to the library and opened. */
+  const handleAiCreate = (tpl) => handleSaveAsNewTemplate(tpl);
+
+  /** The open letter rewritten by the AI: an unsaved change in the Editor. */
+  const handleAiRevision = (tpl) => {
+    handleChangeDraft((prev) => ({
+      ...prev,
+      title: tpl.title,
+      category: tpl.category,
+      description: tpl.description,
+      subject: tpl.subject,
+      recipient: tpl.recipient,
+      body: tpl.body,
+      fields: tpl.fields,
+    }));
+    setActiveView('editor');
+    notify('Rewritten. Save to keep it, or discard the changes to go back.', 'info');
+  };
+
   /** Throw away unsaved edits to the open template, after asking. */
   const handleDiscardDraft = async () => {
     if (!draftDirty) return;
@@ -1252,6 +1302,7 @@ export function App() {
   // ---- Desktop menu accelerators ------------------------------------------
   useElectronMenu({
     onNewLetter: () => setOpenModal('template'),
+    onNewAiLetter: () => setOpenModal('ai-writer'),
     onExportPdf: handleExportPdf,
     onExportWord: handleExportWord,
     onPrint: handlePrint,
@@ -1318,6 +1369,7 @@ export function App() {
           activeTemplateId={activeTemplate?.id}
           onSelectTemplate={handleSelectTemplate}
           onNewTemplate={() => setOpenModal('template')}
+          onWriteWithAi={() => setOpenModal('ai-writer')}
           onDuplicateTemplate={handleDuplicateTemplate}
           onDeleteTemplate={handleDeleteTemplate}
           onTogglePin={handleTogglePin}
@@ -1374,6 +1426,7 @@ export function App() {
             fieldLibrary={fieldLibrary}
             onSaveLibraryField={handleSaveLibraryField}
             categories={allCategories}
+            onRewriteWithAi={() => setOpenModal('ai-revise')}
           />
         )}
 
@@ -1406,7 +1459,10 @@ export function App() {
       <SettingsModal
         isOpen={SETTINGS_MODALS.includes(openModal)}
         initialTab={SETTINGS_TABS.includes(openModal) ? openModal : 'presets'}
-        onClose={() => setOpenModal(null)}
+        onClose={() => {
+          setOpenModal(returnToAi);
+          setReturnToAi(null);
+        }}
         letterhead={letterhead}
         onSaveLetterhead={setLetterhead}
         presets={presets}
@@ -1425,6 +1481,10 @@ export function App() {
         onSaveClinician={setClinician}
         fieldLibrary={fieldLibrary}
         onSaveFieldLibrary={setFieldLibrary}
+        aiSettings={aiSettings}
+        onSaveAiSettings={setAiSettings}
+        savedAiKeys={aiKeys}
+        onSaveAiKeys={handleSaveAiKeys}
         onNotify={notify}
       />
 
@@ -1455,6 +1515,27 @@ export function App() {
         onClose={() => setOpenModal(null)}
         onSaveNewTemplate={handleSaveAsNewTemplate}
         categories={allCategories}
+        onWriteWithAi={() => setOpenModal('ai-writer')}
+      />
+
+      <AiWriterModal
+        isOpen={openModal === 'ai-writer' || openModal === 'ai-revise'}
+        initialMode={openModal === 'ai-revise' ? 'revise' : 'new'}
+        onClose={() => setOpenModal(null)}
+        letter={savedTemplate ? { ...savedTemplate, ...editorDraft } : null}
+        aiSettings={aiSettings}
+        savedKeys={aiKeys}
+        fieldLibrary={fieldLibrary}
+        presets={presets}
+        valuesCache={valuesCache}
+        categories={allCategories}
+        onCreate={handleAiCreate}
+        onApplyRevision={handleAiRevision}
+        onOpenSettings={() => {
+          setReturnToAi(openModal);
+          setOpenModal('ai');
+        }}
+        ask={ask}
       />
 
       <IncompleteFieldsModal
